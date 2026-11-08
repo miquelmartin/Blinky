@@ -1,4 +1,6 @@
 import base64
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -7,7 +9,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from prepare_android_release import PACKAGE, REQUIRED_SECRETS, prepare, validate_secrets
+from prepare_android_release import BUILD_SECRETS, PACKAGE, REQUIRED_SECRETS, main, prepare, validate_secrets
 
 
 def environment() -> dict[str, str]:
@@ -53,6 +55,41 @@ class ReleaseConfigurationTests(unittest.TestCase):
         values["APK_SIGNING_CERT"] = encoded[:8] + "\r\n" + encoded[8:] + "\n"
         certificate, _, _ = validate_secrets(values)
         self.assertEqual(certificate, b"unit-test-keystore")
+
+    def test_build_only_needs_no_play_credentials(self):
+        values = environment()
+        del values["GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON"]
+        _, _, play = validate_secrets(values, build_only=True)
+        self.assertIsNone(play)
+        with self.assertRaisesRegex(ValueError, "GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON"):
+            validate_secrets(values)
+
+    def test_build_only_does_not_parse_ambient_play_credentials(self):
+        values = environment()
+        values["GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON"] = "must-not-be-parsed"
+        _, _, play = validate_secrets(values, build_only=True)
+        self.assertIsNone(play)
+
+    def test_build_only_still_requires_all_signing_and_client_secrets(self):
+        for name in BUILD_SECRETS:
+            values = environment()
+            del values[name]
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, name):
+                validate_secrets(values, build_only=True)
+
+    def test_build_only_rejects_private_key_as_client_config(self):
+        values = environment()
+        values["GOOGLE_SERVICES_JSON"] = values["GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON"]
+        with self.assertRaisesRegex(ValueError, "never a private"):
+            validate_secrets(values, build_only=True)
+
+    def test_cli_defaults_to_internal_and_selects_build_only_explicitly(self):
+        for arguments, build_only in [([], False), (["--build-only"], True)]:
+            with self.subTest(arguments=arguments), \
+                    patch("prepare_android_release.prepare") as prepare_call, \
+                    contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(main(arguments), 0)
+            prepare_call.assert_called_once_with(os.environ, build_only=build_only)
 
     def test_private_key_cannot_be_used_as_client_config(self):
         for value in [
@@ -138,6 +175,22 @@ class ReleaseConfigurationTests(unittest.TestCase):
                 self.assertFalse((root / "blinky-upload-key.p12").exists())
                 self.assertFalse((root / "blinky-play-service-account.json").exists())
                 self.assertFalse((root / "app" / "google-services.json").exists())
+
+    def test_build_only_prepares_no_play_file_or_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "app").mkdir()
+            values = dict(os.environ, **environment(), RUNNER_TEMP=directory, GITHUB_WORKSPACE=directory,
+                          GITHUB_ENV=str(root / "github-env"))
+            values.pop("GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON")
+            with patch("prepare_android_release.subprocess.run", return_value=Mock(returncode=0)):
+                prepare(values, build_only=True)
+            self.assertTrue((root / "blinky-upload-key.p12").is_file())
+            self.assertTrue((root / "app" / "google-services.json").is_file())
+            self.assertFalse((root / "blinky-play-service-account.json").exists())
+            exports = (root / "github-env").read_text(encoding="utf-8")
+            self.assertIn("APK_SIGNING_STORE_FILE=", exports)
+            self.assertNotIn("PLAY_SERVICE_ACCOUNT_FILE", exports)
 
     def test_export_failure_removes_private_files(self):
         with tempfile.TemporaryDirectory() as directory:

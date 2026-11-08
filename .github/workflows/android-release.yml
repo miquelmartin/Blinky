@@ -2,6 +2,15 @@ name: Android internal testing release
 
 on:
   workflow_dispatch:
+    inputs:
+      operation:
+        description: Build a bootstrap bundle only, or publish an internal update
+        type: choice
+        required: true
+        default: internal
+        options:
+          - internal
+          - build-only
 
 permissions:
   contents: read
@@ -17,6 +26,15 @@ jobs:
     timeout-minutes: 30
     environment: android-testing
     steps:
+      - name: Validate the requested operation
+        env:
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          case "$OPERATION" in
+            internal|build-only) ;;
+            *) echo "::error::Unsupported release operation."; exit 1 ;;
+          esac
+
       - name: Check out the release source
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -34,6 +52,7 @@ jobs:
           python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
 
       - name: Restore and validate private release configuration
+        if: inputs.operation == 'internal'
         env:
           APK_SIGNING_CERT: ${{ secrets.APK_SIGNING_CERT }}
           APK_KEY_PASSWORD: ${{ secrets.APK_KEY_PASSWORD }}
@@ -41,6 +60,15 @@ jobs:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
           GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON }}
         run: python3 .github/scripts/prepare_android_release.py
+
+      - name: Restore and validate bootstrap signing configuration
+        if: inputs.operation == 'build-only'
+        env:
+          APK_SIGNING_CERT: ${{ secrets.APK_SIGNING_CERT }}
+          APK_KEY_PASSWORD: ${{ secrets.APK_KEY_PASSWORD }}
+          APK_KEY_ALIAS: ${{ secrets.APK_KEY_ALIAS }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: python3 .github/scripts/prepare_android_release.py --build-only
 
       - name: Build signed APK and app bundle
         env:
@@ -62,7 +90,7 @@ jobs:
       - name: Retain signed release artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: blinky-internal-${{ github.run_number }}
+          name: blinky-${{ inputs.operation }}-${{ github.run_number }}
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/bundle/release/app-release.aab
@@ -71,6 +99,7 @@ jobs:
           retention-days: 7
 
       - name: Publish the app bundle to Play internal testing
+        if: inputs.operation == 'internal'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
         with:
           serviceAccountJson: ${{ env.PLAY_SERVICE_ACCOUNT_FILE }}

@@ -2,9 +2,15 @@
 
 Blinky follows Elsewhere's **Google Play internal testing** distribution route.
 The **Android internal testing release** GitHub Action is started manually on `main`
-by `miquelmartin`. It builds a signed APK and signed AAB, retains both plus checksums
-for seven days, and uploads **only the AAB** to Play's internal track with status
-`completed`. No production promotion, push/tag trigger or recurring automation is included.
+by `miquelmartin`. Both operations build a signed APK and signed AAB and retain both
+plus checksums for seven days:
+
+- **`build-only`** produces the bootstrap artifacts without accessing Play credentials
+  or making a Play request.
+- **`internal`** (default) also uploads **only the AAB** to Play's internal track with
+  status `completed`.
+
+No production promotion, push/tag trigger or recurring automation is included.
 
 Google Play requires an **AAB** for a new app. The retained APK is useful for private
 sideload testing, not a Play upload. Play tester enrollment and their device's update
@@ -56,12 +62,25 @@ After manually uploading code **2**, the next new automated bundle must use a hi
 code (normally **3**), even if the manual release remains a draft. Do not re-upload
 code 2 from the workflow; version codes are consumed by upload, not just publication.
 
-The current release workflow validates the Play uploader secret before it builds.
-Until that secret exists, it cannot supply a bootstrap bundle. A safe build-only
-GitHub run would use only the three signing secrets plus Android client config,
-retain signed APK/AAB/checksums, and make **no Play API request**; alternatively the
-user can build locally with the same keystore and privately supplied password.
-No GitHub secret needs to be downloaded or displayed for either route.
+Use the manual workflow's **`build-only`** operation to obtain this bootstrap bundle.
+It requires only `APK_SIGNING_CERT`, `APK_KEY_PASSWORD`, `APK_KEY_ALIAS` and
+`GOOGLE_SERVICES_JSON`; it neither loads nor validates a Play uploader secret and
+skips the Play upload step. After the workflow is on `main` and those four protected
+environment secrets are correct:
+
+```powershell
+gh workflow run android-release.yml --repo miquelmartin/Blinky --ref main -f operation=build-only
+```
+
+Download the `blinky-build-only-<run number>` artifact. It contains
+`bundle/release/app-release.aab`, `apk/release/app-release.apk` and
+`blinky-checksums.txt`. **Upload the AAB**, not the APK or artifact ZIP, through the
+Console steps above. Artifact creation alone does not consume its version code;
+the manual Play upload does.
+
+Alternatively build locally with the same keystore and privately supplied password.
+No GitHub secret needs to be downloaded or displayed for either route. A build-only
+run is not a Play release and does not notify or update testers.
 
 The internal action uploads the next eligible release, not an app-registration or
 tester-provisioning operation.
@@ -125,7 +144,7 @@ Add these **environment secrets** in `miquelmartin/Blinky`, not Elsewhere:
 | `APK_KEY_PASSWORD` | The keystore/key password |
 | `APK_KEY_ALIAS` | `blinky-upload` (or the alias you created) |
 | `GOOGLE_SERVICES_JSON` | Full **Android client** `google-services.json` for `org.miquelmartin.blinky`, not any private service-account key |
-| `GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON` | Full JSON key of the dedicated app-scoped Play uploader |
+| `GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON` | Full JSON key of the dedicated app-scoped Play uploader; required only for `internal`, never for `build-only` |
 
 GitHub's UI lets you enter secrets privately. With authenticated `gh`, these commands
 pipe file contents straight to GitHub without printing them:
@@ -146,7 +165,7 @@ The password command prompts for the secret locally; do not supply it as `--body
 on the command line. Use the UI if your terminal cannot provide a private interactive
 prompt. Base64 is **not encryption**; never print or commit the encoded keystore.
 
-The workflow checks secret presence, refuses a service-account key as Android client
+The workflow checks operation-specific secret presence, refuses a service-account key as Android client
 config, checks the application ID and validates the PKCS12 alias/password. Signing and
 Play credentials are written only into runner temporary storage, and client config
 into the ignored app path. An always-run cleanup removes them. Signed APK/AAB/checksum
@@ -163,7 +182,7 @@ Land the desired source and version bump on `main`, then select Actions >
 **Android internal testing release** > Run workflow > **main**, or:
 
 ```powershell
-gh workflow run android-release.yml --repo miquelmartin/Blinky --ref main
+gh workflow run android-release.yml --repo miquelmartin/Blinky --ref main -f operation=internal
 ```
 
 The workflow serializes releases and does not cancel an upload in progress. Inspect

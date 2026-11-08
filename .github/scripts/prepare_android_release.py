@@ -1,5 +1,6 @@
 """Restore GitHub environment secrets without logging their contents."""
 
+import argparse
 import base64
 import binascii
 import json
@@ -10,13 +11,13 @@ import sys
 from collections.abc import Mapping
 
 PACKAGE = "org.miquelmartin.blinky"
-REQUIRED_SECRETS = (
+BUILD_SECRETS = (
     "APK_SIGNING_CERT",
     "APK_KEY_PASSWORD",
     "APK_KEY_ALIAS",
     "GOOGLE_SERVICES_JSON",
-    "GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON",
 )
+REQUIRED_SECRETS = (*BUILD_SECRETS, "GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON")
 
 
 def parse_object(value: str, name: str) -> dict:
@@ -37,8 +38,9 @@ def contains_private_key(value: object) -> bool:
     return False
 
 
-def validate_secrets(environment: Mapping[str, str]) -> tuple[bytes, dict, dict]:
-    missing = [name for name in REQUIRED_SECRETS if not environment.get(name, "").strip()]
+def validate_secrets(environment: Mapping[str, str], *, build_only: bool = False) -> tuple[bytes, dict, dict | None]:
+    required = BUILD_SECRETS if build_only else REQUIRED_SECRETS
+    missing = [name for name in required if not environment.get(name, "").strip()]
     if missing:
         raise ValueError("Missing android-testing secrets: " + ", ".join(missing))
     try:
@@ -64,15 +66,17 @@ def validate_secrets(environment: Mapping[str, str]) -> tuple[bytes, dict, dict]
     if not matching_package:
         raise ValueError(f"GOOGLE_SERVICES_JSON must include the Android application {PACKAGE}.")
 
-    play = parse_object(
-        environment["GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON"],
-        "GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON",
-    )
-    if play.get("type") != "service_account" or not all(
-        isinstance(play.get(name), str) and play[name].strip()
-        for name in ("private_key", "client_email", "project_id")
-    ):
-        raise ValueError("GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON must be a dedicated Play uploader service-account key.")
+    play = None
+    if not build_only:
+        play = parse_object(
+            environment["GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON"],
+            "GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON",
+        )
+        if play.get("type") != "service_account" or not all(
+            isinstance(play.get(name), str) and play[name].strip()
+            for name in ("private_key", "client_email", "project_id")
+        ):
+            raise ValueError("GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON must be a dedicated Play uploader service-account key.")
     return certificate, client, play
 
 
@@ -82,8 +86,8 @@ def write_private(path: Path, content: bytes) -> None:
         output.write(content)
 
 
-def prepare(environment: Mapping[str, str]) -> None:
-    certificate, client, play = validate_secrets(environment)
+def prepare(environment: Mapping[str, str], *, build_only: bool = False) -> None:
+    certificate, client, play = validate_secrets(environment, build_only=build_only)
     required_paths = ("RUNNER_TEMP", "GITHUB_WORKSPACE", "GITHUB_ENV")
     if any(not environment.get(name) for name in required_paths):
         raise ValueError("Run this helper only in GitHub Actions with RUNNER_TEMP, GITHUB_WORKSPACE and GITHUB_ENV.")
@@ -101,20 +105,25 @@ def prepare(environment: Mapping[str, str]) -> None:
         )
         if result.returncode:
             raise ValueError("Cannot open the PKCS12 signing key/alias. Check APK_SIGNING_CERT, APK_KEY_PASSWORD and APK_KEY_ALIAS.")
-        write_private(play_path, json.dumps(play).encode("utf-8"))
+        if play is not None:
+            write_private(play_path, json.dumps(play).encode("utf-8"))
         write_private(client_path, json.dumps(client).encode("utf-8"))
         with Path(environment["GITHUB_ENV"]).open("a", encoding="utf-8") as output:
             output.write(f"APK_SIGNING_STORE_FILE={store}\n")
-            output.write(f"PLAY_SERVICE_ACCOUNT_FILE={play_path}\n")
+            if play is not None:
+                output.write(f"PLAY_SERVICE_ACCOUNT_FILE={play_path}\n")
     except (OSError, ValueError, subprocess.SubprocessError):
         for path in (store, play_path, client_path):
             path.unlink(missing_ok=True)
         raise
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--build-only", action="store_true", help="Prepare signing/client configuration without any Play credentials.")
+    args = parser.parse_args(argv)
     try:
-        prepare(os.environ)
+        prepare(os.environ, build_only=args.build_only)
     except ValueError as error:
         print(f"::error::{error}", file=sys.stderr)
         return 1

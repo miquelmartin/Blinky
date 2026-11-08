@@ -142,7 +142,8 @@ Python never runs on the phone. No sender configuration or credentials belong in
 ## Signed tester releases
 
 The manually dispatched [Android release workflow](.github/workflows/android-release.yml)
-builds a signed APK and AAB, then publishes the AAB to **Google Play internal testing**.
+builds a signed APK and AAB. Select **`build-only`** for first-upload/bootstrap artifacts
+without Play access, or **`internal`** to publish the AAB to **Google Play internal testing**.
 See [signing, GitHub secrets and tester setup](docs/android-releases.md) before running
 it. Play enrollment/update settings govern tester updates; this is not a forced
 installation service. The FCM sender credential is separate from Play publishing.
