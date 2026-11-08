@@ -6,7 +6,7 @@
     <string name="channel_description">Notifications sent to this Blinky installation</string>
     <string name="token_label">This installation\'s FCM token</string>
     <string name="token_empty">No token available yet.</string>
-    <string name="token_loading">Loading the current token...</string>
+    <string name="token_loading">Loading the current token&#8230;</string>
     <string name="token_ready">Token ready. Treat it as private routing information.</string>
     <string name="token_failed">Could not load a token: %1$s. Check internet access, Google Play services, and Firebase configuration, then retry.</string>
     <string name="token_failed_unknown">Firebase did not provide an error detail</string>

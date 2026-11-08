@@ -18,7 +18,7 @@ Set `JAVA_HOME` to your JDK and `ANDROID_HOME` to your SDK, or create an ignored
 `local.properties` in the repository root with your SDK path:
 
 ```properties
-sdk.dir=C:\\Users\\YOUR_NAME\\AppData\\Local\\Android\\Sdk
+sdk.dir=C\:\\Users\\YOUR_NAME\\AppData\\Local\\Android\\Sdk
 ```
 
 Download [Android Studio](https://developer.android.com/studio), then open **More
@@ -44,6 +44,18 @@ On macOS/Linux use `sh ./gradlew` with the same arguments. The APK output is
 ```powershell
 adb install -r .\app\build\outputs\apk\debug\app-debug.apk
 ```
+
+If `adb` is not on your Windows PATH, use the SDK executable explicitly. Enable
+Developer options and USB debugging on your phone, connect it, and accept the
+computer's debugging authorization prompt:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices -l
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" -d install -r .\app\build\outputs\apk\debug\app-debug.apk
+```
+
+The `-d` option targets a single physical USB device rather than an emulator. The
+debug APK is for personal sideloading, not a signed production/Play Store release.
 
 **Without `app\google-services.json`**, the Google Services plugin is not applied.
 The real app ID is preserved, and the build can run without fake Firebase config.
@@ -150,6 +162,10 @@ background and with the phone locked. Tap a notification to open Blinky.
 Test permission denial and a disabled Messages channel: the last-message status
 reports suppressed display. Re-enable and send again; suppressed messages are not replayed.
 **FCM acceptance is not proof of phone delivery.**
+
+Tokens and the last-message preferences are excluded from cloud backup and device
+transfer. Obtain the new installation's token on each phone rather than restoring
+another installation's saved routing token.
 
 FCM is best-effort, not guaranteed or exact-once. Force-stop blocks delivery until
 reopening; swiping from recents is normally not force-stop. Network loss, Doze, vendor
