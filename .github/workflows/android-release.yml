@@ -1,0 +1,88 @@
+name: Android internal testing release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blinky-android-internal-release
+  cancel-in-progress: false
+
+jobs:
+  internal:
+    if: github.ref == 'refs/heads/main' && github.actor == 'miquelmartin'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: android-testing
+    steps:
+      - name: Check out the release source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Check sender and release-configuration tests
+        run: |
+          python3 -m unittest discover -s sender -p 'test_*.py' -v
+          python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
+      - name: Restore and validate private release configuration
+        env:
+          APK_SIGNING_CERT: ${{ secrets.APK_SIGNING_CERT }}
+          APK_KEY_PASSWORD: ${{ secrets.APK_KEY_PASSWORD }}
+          APK_KEY_ALIAS: ${{ secrets.APK_KEY_ALIAS }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_INTERNAL_SERVICE_ACCOUNT_JSON }}
+        run: python3 .github/scripts/prepare_android_release.py
+
+      - name: Build signed APK and app bundle
+        env:
+          APK_KEY_PASSWORD: ${{ secrets.APK_KEY_PASSWORD }}
+          APK_KEY_ALIAS: ${{ secrets.APK_KEY_ALIAS }}
+        run: sh ./gradlew --no-daemon --console=plain :app:assembleRelease :app:bundleRelease :app:lintRelease
+
+      - name: Verify signatures and prepare checksums
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify app/build/outputs/apk/release/app-release.apk
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab > "$RUNNER_TEMP/blinky-bundle-verification.txt"
+          if ! grep -q 'jar verified' "$RUNNER_TEMP/blinky-bundle-verification.txt"; then
+            echo "::error::The release AAB signature could not be verified."
+            exit 1
+          fi
+          cd app/build/outputs
+          sha256sum apk/release/app-release.apk bundle/release/app-release.aab > blinky-checksums.txt
+
+      - name: Retain signed release artifacts
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: blinky-internal-${{ github.run_number }}
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/bundle/release/app-release.aab
+            app/build/outputs/blinky-checksums.txt
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish the app bundle to Play internal testing
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
+        with:
+          serviceAccountJson: ${{ env.PLAY_SERVICE_ACCOUNT_FILE }}
+          packageName: org.miquelmartin.blinky
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+
+      - name: Remove private configuration
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/blinky-upload-key.p12"
+          rm -f "$RUNNER_TEMP/blinky-play-service-account.json"
+          rm -f "$RUNNER_TEMP/blinky-bundle-verification.txt"
+          rm -f "$GITHUB_WORKSPACE/app/google-services.json"

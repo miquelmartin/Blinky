@@ -139,6 +139,14 @@ The token file contains just the installation token, optionally with a trailing 
 Treat it as private routing information; avoid public logs or shared clipboard history.
 Python never runs on the phone. No sender configuration or credentials belong in Git.
 
+## Signed tester releases
+
+The manually dispatched [Android release workflow](.github/workflows/android-release.yml)
+builds a signed APK and AAB, then publishes the AAB to **Google Play internal testing**.
+See [signing, GitHub secrets and tester setup](docs/android-releases.md) before running
+it. Play enrollment/update settings govern tester updates; this is not a forced
+installation service. The FCM sender credential is separate from Play publishing.
+
 The sender uses **data-only, high-priority** messages with string `title` and `body`.
 The Android service displays them through the same channel in foreground and background.
 The Firebase console's notification composer sends a different message type: the

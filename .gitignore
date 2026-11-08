@@ -5,6 +5,8 @@ local.properties
 **/google-services.json
 *.jks
 *.keystore
+*.p12
+*.pfx
 .env
 .env.*
 .venv/
@@ -13,3 +15,4 @@ __pycache__/
 service-account*.json
 *-firebase-adminsdk-*.json
 fcm-token*.txt
+*-????????????.json
