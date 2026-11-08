@@ -18,17 +18,60 @@ details/declarations, configure Play App Signing and its upload certificate, and
 up an internal-testing email list or Google Group. Give testers the Play opt-in link.
 Do not reuse Elsewhere's private keys or credentials.
 
-For the new Blinky app, establish its first internal release in Play Console if the
-Publishing API cannot yet publish it (for example, while the app is still a draft).
-Use the signed AAB from the workflow artifact if a first automated upload fails.
-Complete any required review/setup in the Console; there is deliberately no silent
-fallback to draft or a different track. The internal action uploads the next eligible
-release, not an app-registration or tester-provisioning operation.
+### Required first manual upload
+
+Creating the Console app alone does **not** bootstrap the Publishing API. Google's
+[Edits documentation](https://developers.google.com/android-publisher/edits) requires
+an existing app with at least one artifact uploaded **through Play Console**. Its text
+uses the legacy term APK; for this new app, use a signed **AAB**, as required by the
+[current release instructions](https://support.google.com/googleplay/android-developer/answer/9859348).
+The [pinned upload action also documents the first manual APK/AAB requirement](https://github.com/r0adkll/upload-google-play/blob/e738b9dd8f2476ea806d921b64aacd24f34515a5/README.md#faq).
+
+1. Obtain `app-release.aab`, signed with the **same Blinky upload keystore** stored
+   in the GitHub environment. The current source is version **0.1.1 / code 2**.
+   A debug APK or a disposable-validation-key bundle is not the bootstrap artifact.
+2. In Play Console select Blinky, then **Test and release > Testing > Internal
+   testing > Create new release**. If creation is disabled, resolve the Dashboard's
+   indicated blocking tasks.
+3. Follow the first-release Play App Signing prompts. Use Play's default generated
+   app-signing key; the certificate on the upload-signed AAB identifies your separate
+   upload key. Do **not** upload the private PKCS12 file or its password into a listing.
+4. Upload the signed AAB and confirm its package is **`org.miquelmartin.blinky`**,
+   version code and upload certificate. A first artifact fixes the package name.
+5. Add release name/notes, save and review the release, and complete the Console's
+   internal rollout or review/publication flow. Configure the internal tester email
+   list and opt-in link separately. Do not launch a production release.
+
+The manual artifact upload establishes the API's existing-package prerequisite.
+Console consents and publishing/app-state blockers are separate: a saved draft alone
+is **not proof** that a subsequent API upload with `status: completed` is eligible.
+Complete the Console's required first-release steps and surface any remaining
+draft/app-state error rather than silently changing status or track.
+
+[Internal testing can start before full app setup is complete](https://support.google.com/googleplay/android-developer/answer/9845334#internal_test);
+do not require a production launch or production-access testing merely to bootstrap
+the internal track. Actual Console blockers take precedence for this app.
+
+After manually uploading code **2**, the next new automated bundle must use a higher
+code (normally **3**), even if the manual release remains a draft. Do not re-upload
+code 2 from the workflow; version codes are consumed by upload, not just publication.
+
+The current release workflow validates the Play uploader secret before it builds.
+Until that secret exists, it cannot supply a bootstrap bundle. A safe build-only
+GitHub run would use only the three signing secrets plus Android client config,
+retain signed APK/AAB/checksums, and make **no Play API request**; alternatively the
+user can build locally with the same keystore and privately supplied password.
+No GitHub secret needs to be downloaded or displayed for either route.
+
+The internal action uploads the next eligible release, not an app-registration or
+tester-provisioning operation.
 
 Create a **dedicated Blinky Play uploader** Google service account with Android
 Publisher API enabled in its project. In Play Console, invite that service account
 and grant app-scoped internal-testing release access only for Blinky. Do not grant
-production-release or account-admin access. The FCM sender's send-only key is **not**
+production-release or account-admin access. No Cloud project/developer-account link is
+required under the [current API setup instructions](https://developers.google.com/android-publisher/getting_started).
+The FCM sender's send-only key is **not**
 the Play uploader credential and should not be reused for this purpose.
 
 ## Create a separate upload signing key
