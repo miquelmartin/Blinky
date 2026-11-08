@@ -191,6 +191,14 @@ in can install or update from Play, subject to Play processing, account eligibil
 review requirements and device update settings. Availability is not proof of device
 installation or notification delivery.
 
+After uploading, the workflow creates a fresh API edit to read **committed**
+internal-track state. It requires the APK's exact version code with status
+`completed`, then deletes that verification edit without committing any changes.
+This confirms Play is serving that release on the internal track; Play/device
+propagation can still take time. A failed upload or availability check must not be
+reported as an available release. Do not rerun an upload with a consumed code merely
+to repeat verification.
+
 ## Local and configuration-independent checks
 
 ```powershell

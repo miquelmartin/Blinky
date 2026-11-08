@@ -26,4 +26,22 @@
     <string name="latest_message_failed">Last message arrived, but notification display failed: %1$s</string>
     <string name="message_body_missing">A message arrived without a body.</string>
     <string name="delivery_note">Delivery requires Google Play services and internet access. Force-stopping the app prevents delivery until you reopen it. Reload token retrieves the current token; it does not rotate it.</string>
+    <string name="history_title">Notification history</string>
+    <string name="history_today">Today</string>
+    <string name="history_yesterday">Yesterday</string>
+    <string name="history_loading">Loading history\u2026</string>
+    <string name="history_empty">Nothing here yet.\nSend your first notification from your Python sender.</string>
+    <string name="history_read_failed">Couldn\'t load history. Close and reopen Blinky to retry.</string>
+    <string name="history_write_failed">A received message couldn\'t be saved. History may be incomplete.</string>
+    <string name="fetch_copy_token">Fetch and copy the current FCM token</string>
+    <string name="token_fetch_failed">Couldn\'t fetch the token. Try again.</string>
+    <string name="token_copy_failed">Token fetched, but couldn\'t be copied. Try again.</string>
+    <string name="firebase_initialization_failed">Firebase couldn\'t start. Close and reopen Blinky to retry.</string>
+    <string name="permission_rationale">Allow notifications to see incoming Blinky messages.</string>
+    <string name="permission_settings_notice">Notifications are off. Open settings</string>
+    <string name="settings_open_failed">Couldn\'t open notification settings. Open Blinky\'s notification settings from Android Settings.</string>
+    <plurals name="history_count">
+        <item quantity="one">%d ping</item>
+        <item quantity="other">%d pings</item>
+    </plurals>
 </resources>

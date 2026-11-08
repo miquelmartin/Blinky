@@ -23,8 +23,9 @@ android {
         applicationId = "org.miquelmartin.blinky"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
@@ -80,4 +81,7 @@ kotlin {
 dependencies {
     implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
     implementation("com.google.firebase:firebase-messaging")
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }

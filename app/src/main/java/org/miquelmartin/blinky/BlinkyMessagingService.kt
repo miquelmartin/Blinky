@@ -5,6 +5,7 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.database.sqlite.SQLiteException
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -24,6 +25,13 @@ class BlinkyMessagingService : FirebaseMessagingService() {
             ?: message.notification?.body
             ?: getString(R.string.message_body_missing)
         val preferences = BlinkyState.preferences(this)
+        try {
+            NotificationHistory(this).use { it.append(title, body, System.currentTimeMillis()) }
+            preferences.edit().putString(BlinkyState.HISTORY_REVISION, UUID.randomUUID().toString()).apply()
+        } catch (error: SQLiteException) {
+            Log.e(TAG, "Received message could not be saved (${error.javaClass.simpleName}).")
+            preferences.edit().putBoolean(BlinkyState.HISTORY_WRITE_FAILED, true).apply()
+        }
         preferences.edit()
             .putString(BlinkyState.LAST_MESSAGE, "$title: $body")
             .putString(BlinkyState.LAST_DISPLAY, BlinkyState.SUPPRESSED)
@@ -55,7 +63,7 @@ class BlinkyMessagingService : FirebaseMessagingService() {
                 .notify(message.messageId ?: UUID.randomUUID().toString(), 0, notification)
             preferences.edit().putString(BlinkyState.LAST_DISPLAY, BlinkyState.DISPLAYED).apply()
         } catch (error: SecurityException) {
-            Log.e(TAG, "Notification permission changed while displaying a message.", error)
+            Log.e(TAG, "Notification permission changed while displaying a message.")
             preferences.edit().putString(BlinkyState.LAST_DISPLAY, BlinkyState.FAILED).apply()
         }
     }

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Blinky" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#F77A70</item>
+        <item name="android:windowBackground">#202E44</item>
+        <item name="android:statusBarColor">#202E44</item>
+        <item name="android:navigationBarColor">#26364D</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

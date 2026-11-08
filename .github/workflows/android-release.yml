@@ -74,7 +74,7 @@ jobs:
         env:
           APK_KEY_PASSWORD: ${{ secrets.APK_KEY_PASSWORD }}
           APK_KEY_ALIAS: ${{ secrets.APK_KEY_ALIAS }}
-        run: sh ./gradlew --no-daemon --console=plain :app:assembleRelease :app:bundleRelease :app:lintRelease
+        run: sh ./gradlew --no-daemon --console=plain :app:testReleaseUnitTest :app:assembleRelease :app:bundleRelease :app:lintRelease
 
       - name: Verify signatures and prepare checksums
         run: |
@@ -98,6 +98,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Prepare internal-track verification dependencies
+        if: inputs.operation == 'internal'
+        run: python3 -m pip install --disable-pip-version-check --quiet -r sender/requirements.txt
+
       - name: Publish the app bundle to Play internal testing
         if: inputs.operation == 'internal'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
@@ -107,6 +111,10 @@ jobs:
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
           track: internal
           status: completed
+
+      - name: Verify committed internal track availability
+        if: inputs.operation == 'internal'
+        run: python3 .github/scripts/verify_internal_release.py --apk app/build/outputs/apk/release/app-release.apk
 
       - name: Remove private configuration
         if: always()

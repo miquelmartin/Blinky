@@ -62,12 +62,28 @@ The real app ID is preserved, and the build can run without fake Firebase config
 This APK opens and explains missing configuration, but **cannot register or receive
 messages**. Add your actual client configuration, rebuild and reinstall to enable FCM.
 
-Open Blinky and press **Enable notifications**, then allow the Android permission.
-Confirm notifications and the **Messages** channel are enabled. Copy the token to a
-private text file **outside this repository** on your trusted computer.
-**Reload token** retrieves the current token, usually unchanged; it does not rotate
-or delete it. Tokens can change after reinstall, data clearing or Firebase rotation;
-the screen also updates when `onNewToken` runs.
+Open Blinky and allow the notification permission when Android prompts. Blinky
+checks permission on each app open; repeated denial can suppress native dialogs.
+When that happens, or when the **Messages** channel is disabled, use the discreet
+**Open settings** notice. Android versions before 13 do not have this runtime dialog.
+
+The single top-right **Copy token** action fetches the current FCM token, then
+copies it. It does not copy a cached token if retrieval fails, or claim success if
+the clipboard fails. Save the copied token to a private text file **outside this
+repository** on your trusted computer. Fetching does not rotate or delete a token;
+tokens can change after reinstall, data clearing or Firebase rotation.
+
+The dark Pocket Console screen shows actual received messages newest first, grouped
+by local day, with title, body and local receipt time. History is stored in a private
+SQLite database and persists across app restarts, including messages received while
+notifications were disabled. The count is total received entries, not unread or
+confirmed delivery. No sample messages are populated.
+
+Version **0.2.0 / code 3** keeps the same package and signing configuration as code 2.
+A normal Play update preserves installation state and the existing token. Earlier
+versions stored only a combined last-message string without a timestamp, so it is
+not backfilled as invented history; the new history starts with receipts after the
+update. No automatic history pruning or cross-device synchronization is performed.
 
 ## Trusted Python sender setup
 
@@ -152,7 +168,7 @@ The sender uses **data-only, high-priority** messages with string `title` and `b
 The Android service displays them through the same channel in foreground and background.
 The Firebase console's notification composer sends a different message type: the
 Firebase SDK displays background notification messages automatically, and those do
-not update the app's last-message display through the service.
+not update the app's received-message history through the service.
 
 ## Checks and real delivery test
 
@@ -168,11 +184,12 @@ packaging only, **not Firebase registration or delivery**. For a real smoke test
 rebuild with config, install and open the app, grant permission, copy its token and
 send from the authenticated computer. Confirm notifications with the app open, in the
 background and with the phone locked. Tap a notification to open Blinky.
-Test permission denial and a disabled Messages channel: the last-message status
-reports suppressed display. Re-enable and send again; suppressed messages are not replayed.
+Test permission denial and a disabled Messages channel: received messages should
+still appear in history, but the notification should not be displayed. Re-enable
+and send again; suppressed messages are not replayed.
 **FCM acceptance is not proof of phone delivery.**
 
-Tokens and the last-message preferences are excluded from cloud backup and device
+Tokens, history and the legacy last-message preferences are excluded from cloud backup and device
 transfer. Obtain the new installation's token on each phone rather than restoring
 another installation's saved routing token.
 
@@ -181,8 +198,8 @@ reopening; swiping from recents is normally not force-stop. Network loss, Doze, 
 battery policies and Play services problems may delay messages. High priority is
 for visible notifications, not generic background jobs; repeated non-visible delivery
 can cause deprioritization. System settings can mute sound or heads-up presentation.
-Only the last received message is retained locally: no inbox, delivery receipt or
-durable history. FCM's default expiry is up to four weeks. This MVP adds no end-to-end
+Received-message history is local only, without delivery receipts or server storage.
+FCM's default expiry is up to four weeks. This MVP adds no end-to-end
 encryption; do not send secrets.
 
 Errors exit nonzero: `UNREGISTERED` means retrieve a new phone token;
@@ -190,6 +207,11 @@ Errors exit nonzero: `UNREGISTERED` means retrieve a new phone token;
 means check API enablement, ADC identity, IAM and quota-project permission. Empty or
 oversized messages are rejected locally. Transient failures are not silently retried,
 which avoids duplicate visible messages.
+
+History, token-action and permission decision unit tests run with
+`:app:testDebugUnitTest`. With an emulator attached, `:app:connectedDebugAndroidTest`
+also verifies SQLite persistence and preservation of existing installation state.
+Instrumentation fixtures use a separate test database and do not populate app history.
 
 ## Copilot phone notifications
 
