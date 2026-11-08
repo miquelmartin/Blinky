@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Blinky</string>
+    <string name="intro">Receive messages sent from your trusted computer through Firebase Cloud Messaging.</string>
+    <string name="channel_name">Messages</string>
+    <string name="channel_description">Notifications sent to this Blinky installation</string>
+    <string name="token_label">This installation\'s FCM token</string>
+    <string name="token_empty">No token available yet.</string>
+    <string name="token_loading">Loading the current token...</string>
+    <string name="token_ready">Token ready. Treat it as private routing information.</string>
+    <string name="token_failed">Could not load a token: %1$s. Check internet access, Google Play services, and Firebase configuration, then retry.</string>
+    <string name="token_failed_unknown">Firebase did not provide an error detail</string>
+    <string name="token_empty_response">Firebase returned an empty token</string>
+    <string name="copy_token">Copy token</string>
+    <string name="reload_token">Reload token</string>
+    <string name="token_copied">Token copied</string>
+    <string name="enable_notifications">Enable notifications</string>
+    <string name="notification_settings">Notification settings</string>
+    <string name="notifications_enabled">Notifications are enabled.</string>
+    <string name="notifications_disabled">Notifications are disabled. Enable permission and the Messages channel in notification settings.</string>
+    <string name="firebase_missing">Firebase is not configured in this build. Add your project\'s google-services.json to the app directory, rebuild, and reinstall. No messages can be received yet.</string>
+    <string name="firebase_failed">Firebase initialization failed: %1$s</string>
+    <string name="latest_message">Last message received: %1$s</string>
+    <string name="latest_message_none">No message has been received by the app yet.</string>
+    <string name="latest_message_suppressed">Last message arrived, but notifications were disabled: %1$s</string>
+    <string name="latest_message_failed">Last message arrived, but notification display failed: %1$s</string>
+    <string name="message_body_missing">A message arrived without a body.</string>
+    <string name="delivery_note">Delivery requires Google Play services and internet access. Force-stopping the app prevents delivery until you reopen it. Reload token retrieves the current token; it does not rotate it.</string>
+</resources>
