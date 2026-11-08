@@ -21,6 +21,11 @@ Set `JAVA_HOME` to your JDK and `ANDROID_HOME` to your SDK, or create an ignored
 sdk.dir=C:\\Users\\YOUR_NAME\\AppData\\Local\\Android\\Sdk
 ```
 
+Download [Android Studio](https://developer.android.com/studio), then open **More
+Actions > SDK Manager** and install Android SDK Platform 36, Build-Tools 35.0.0 and
+Platform-Tools. Accept the SDK license prompts. The usual Windows SDK directory is
+`%LOCALAPPDATA%\Android\Sdk`.
+
 Register the Android app in your Firebase project with **`org.miquelmartin.blinky`**.
 Download its client **`google-services.json`** into **`app\google-services.json`**.
 It is ignored by Git. This client configuration is bundled into the configured APK;
@@ -72,6 +77,17 @@ Set the path in the PowerShell process that will run the sender:
 ```powershell
 $env:GOOGLE_APPLICATION_CREDENTIALS = "$env:USERPROFILE\blinky-private\service-account.json"
 ```
+
+If you already saved it as a persistent **user** environment variable, restart the
+terminal/app or refresh the current PowerShell process without printing its value:
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = [Environment]::GetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", "User")
+```
+
+Existing app processes do not automatically inherit changes to user environment
+variables; a new Python process launched by an old terminal inherits that terminal's
+old environment unless you refresh it first.
 
 For unattended execution, configure that environment variable in the scheduled
 process, or use a private local launcher outside Git. The sender uses the standard
