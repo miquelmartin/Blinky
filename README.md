@@ -190,3 +190,12 @@ Errors exit nonzero: `UNREGISTERED` means retrieve a new phone token;
 means check API enablement, ADC identity, IAM and quota-project permission. Empty or
 oversized messages are rejected locally. Transient failures are not silently retried,
 which avoids duplicate visible messages.
+
+## Copilot phone notifications
+
+The Markdown-only [blinky-notify skill](.github/skills/blinky-notify/SKILL.md)
+lets Copilot use the existing sender when you explicitly ask "notify me",
+"tell me on the phone", or "ping me on Blinky". See
+[personal skill installation and private runtime setup](docs/notification-skill.md)
+to make it available across local repositories without embedding configuration
+or relying on a temporary worktree. It sends no unsolicited or scheduled messages.
