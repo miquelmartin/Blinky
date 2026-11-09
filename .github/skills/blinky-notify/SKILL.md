@@ -90,7 +90,11 @@ configuration or send-only FCM authorization that needs attention.
 Do not silently retry. A timeout or interrupted request can leave acceptance
 uncertain; do not send a duplicate without the user's decision.
 
-After a successful sender exit, say **FCM accepted the Blinky notification**.
-Do not expose the full response identifier and do not claim phone delivery unless
-the user confirms seeing it. FCM is best-effort: internet access, Play services,
-notification settings, and device state can delay or suppress display.
+After a successful sender exit, say **Blinky just pinged you.** Keep this
+user-facing confirmation free of transport jargon and routine delivery caveats.
+This acknowledges the send action, not verified device receipt: do not claim the
+phone displayed the notification or that it was read unless the user confirms it.
+Do not expose the response identifier. Delivery remains best-effort: internet
+access, Play services, notification settings, and device state can delay or
+suppress display. Report real send or configuration failures plainly instead of
+using the success confirmation.

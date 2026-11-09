@@ -66,8 +66,10 @@ can read the skill; they need an already authorized way to execute on the truste
 computer. Do not copy the key or token to a cloud session.
 
 Notification content is not end-to-end encrypted. Never send credentials or
-installation tokens. A successful send means FCM accepted the message, not that
-the phone displayed it.
+installation tokens. After a successful send, the skill confirms "Blinky just
+pinged you." This acknowledges the send action, not that the phone displayed the
+notification or that it was read. Send and configuration failures are still
+reported plainly.
 
 ## Official references
 
