@@ -25,7 +25,6 @@ import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.widget.FrameLayout
 import android.widget.ImageButton
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ProgressBar
@@ -46,6 +45,7 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
     private lateinit var emptyHistory: TextView
     private lateinit var list: ListView
     private lateinit var adapter: HistoryAdapter
+    private lateinit var brand: IndustrialBrandView
     private val historyWorker = Executors.newSingleThreadExecutor()
     private var firebaseReady = false
     private var tokenLoading = false
@@ -75,8 +75,14 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
 
     override fun onResume() {
         super.onResume()
+        brand.setActive(true)
         loadHistory()
         checkNotificationPermission()
+    }
+
+    override fun onPause() {
+        brand.setActive(false)
+        super.onPause()
     }
 
     override fun onStop() {
@@ -97,37 +103,19 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(PocketColors.HEADER)
+            clipChildren = false
+            clipToPadding = false
         }
         val statusInset = View(this)
         val navigationInset = View(this).apply { setBackgroundColor(PocketColors.HISTORY) }
         root.addView(statusInset, LinearLayout.LayoutParams(-1, 0))
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(54), dp(24), dp(24))
-        }
-        val heading = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        heading.addView(ImageView(this).apply {
-            setImageResource(R.drawable.blinky_foreground)
-            background = rounded(0xFF293C59.toInt(), 23)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(dp(80), dp(80)))
-        heading.addView(label(R.string.app_name, 32f), LinearLayout.LayoutParams(0, -2, 1f).apply {
-            leftMargin = dp(12)
-        })
-        val tokenControl = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-        }
         val tokenFrame = FrameLayout(this)
         tokenButton = ImageButton(this).apply {
             setImageResource(R.drawable.ic_copy_token)
             imageTintList = ColorStateList.valueOf(PocketColors.HEADER)
-            setPadding(dp(12), dp(12), dp(12), dp(12))
+            setPadding(dp(10), dp(10), dp(10), dp(10))
             background = RippleDrawable(
-                ColorStateList.valueOf(0x33202E44), rounded(PocketColors.CORAL, 18), null
+                ColorStateList.valueOf(0x33202E44), rounded(PocketColors.CORAL, 17), null
             )
             contentDescription = getString(R.string.fetch_copy_token)
             setOnClickListener { fetchAndCopyToken() }
@@ -138,41 +126,33 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         }
         tokenFrame.addView(tokenButton, FrameLayout.LayoutParams(-1, -1))
         tokenFrame.addView(tokenProgress, FrameLayout.LayoutParams(dp(28), dp(28), Gravity.CENTER))
-        tokenControl.addView(tokenFrame, LinearLayout.LayoutParams(dp(54), dp(54)))
-        tokenControl.addView(label(R.string.copy_token, 11f, PocketColors.BODY).apply {
-            setSingleLine()
-            gravity = Gravity.CENTER
-            setPadding(0, dp(10), 0, 0)
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }, LinearLayout.LayoutParams(-2, -2))
-        heading.addView(tokenControl)
-        header.addView(heading)
+        brand = IndustrialBrandView(this)
+        root.addView(IndustrialHeader(this, brand, tokenFrame), LinearLayout.LayoutParams(-1, -2))
         tokenStatus = label(R.string.token_fetch_failed, 13f, PocketColors.CORAL).apply {
             visibility = View.GONE
-            setPadding(0, dp(16), 0, 0)
+            setPadding(dp(24), dp(8), dp(24), dp(16))
             accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
         permissionNotice = label(R.string.permission_settings_notice, 13f, PocketColors.BODY).apply {
             visibility = View.GONE
             minimumHeight = dp(48)
-            setPadding(0, dp(16), 0, dp(4))
+            setPadding(dp(24), dp(8), dp(24), dp(16))
             setOnClickListener { openNotificationSettings() }
         }
-        header.addView(tokenStatus)
-        header.addView(permissionNotice)
-        root.addView(header)
+        root.addView(tokenStatus)
+        root.addView(permissionNotice)
 
         val history = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(PocketColors.HISTORY, 30).apply {
-                val radius = dp(30).toFloat()
-                cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
-            }
         }
         val historyHeading = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(24), dp(24), dp(24), dp(2))
+            setPadding(dp(24), dp(24), dp(24), dp(16))
+            background = rounded(PocketColors.HISTORY_HEADING, 30).apply {
+                val radius = dp(30).toFloat()
+                cornerRadii = floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
+            }
         }
         historyHeading.addView(label(R.string.history_title, 21f), LinearLayout.LayoutParams(0, -2, 1f))
         countView = TextView(this).apply {
@@ -187,10 +167,11 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         history.addView(historyHeading)
         historyNotice = label(R.string.history_write_failed, 13f, PocketColors.CORAL).apply {
             setPadding(dp(24), dp(16), dp(24), 0)
+            setBackgroundColor(PocketColors.HISTORY_FEED)
             visibility = View.GONE
         }
         history.addView(historyNotice)
-        val feed = FrameLayout(this)
+        val feed = FrameLayout(this).apply { setBackgroundColor(PocketColors.HISTORY_FEED) }
         adapter = HistoryAdapter(this)
         list = ListView(this).apply {
             adapter = this@MainActivity.adapter

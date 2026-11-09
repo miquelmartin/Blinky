@@ -3,5 +3,5 @@
     android:width="32dp" android:height="32dp" android:viewportWidth="32" android:viewportHeight="32">
     <path android:fillColor="@android:color/transparent" android:strokeColor="#202E44"
         android:strokeWidth="2" android:strokeLineCap="round" android:strokeLineJoin="round"
-        android:pathData="M9,11 L9,8 A8,8 0,0 1,23 4 M23,1 L23,6 L18,6 M12,13 L20,13 Q22,13 22,15 L22,26 Q22,28 20,28 L12,28 Q10,28 10,26 L10,15 Q10,13 12,13 M24,10 L26,10 Q28,10 28,12 L28,24" />
+        android:pathData="M5,22 L5,6 Q5,4 7,4 L21,4 M11,9 L25,9 Q27,9 27,11 L27,26 Q27,28 25,28 L11,28 Q9,28 9,26 L9,11 Q9,9 11,9 M18,17 A3,3 0,1 0,12 17 A3,3 0,1 0,18 17 M18,17 L24,17 M21,17 L21,21 M24,17 L24,20" />
 </vector>

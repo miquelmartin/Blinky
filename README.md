@@ -79,7 +79,26 @@ SQLite database and persists across app restarts, including messages received wh
 notifications were disabled. The count is total received entries, not unread or
 confirmed delivery. No sample messages are populated.
 
-Version **0.2.0 / code 3** keeps the same package and signing configuration as code 2.
+Version **0.3.0 / code 4** adds the Industrial header: a larger transparent Vinyl
+mascot, background-free BLINKY wordmark and icon-only token action. The history
+heading is 45%-opaque navy (down from the prototype's 68%); its text stays opaque,
+and the adjoining feed is 88%-opaque. Neither surface has an opaque parent plate.
+The mascot is 10% smaller than the selected animation prototype and positioned
+so its entire silhouette, including its shadow, clears the history heading.
+The wordmark and token action stay aligned with the pupils without shrinking.
+
+The ghost eyelids and clipped wordmark blink together, with randomized 8-12 second
+start intervals and 0.8-1.2 second close/hold/open cycles at normal system animation
+speed. Only those two elements animate. Animation stops and resets when the app
+isn't visible, and Android's disabled-animator / Remove animations setting keeps
+them static and open. System animation speed preferences are respected.
+
+The bundled Barlow Semi Condensed Bold font is SIL OFL 1.1 licensed, not a Windows
+font. Its [copyright and license](app/src/main/assets/fonts/OFL-BarlowSemiCondensed.txt)
+are included in the APK. Source: Google Fonts commit
+`5bb28733cec313b63fbd415b574b5ae35c8aa8b8`, `ofl/barlowsemicondensed`.
+
+The update keeps the same package and signing configuration as earlier versions.
 A normal Play update preserves installation state and the existing token. Earlier
 versions stored only a combined last-message string without a timestamp, so it is
 not backfilled as invented history; the new history starts with receipts after the

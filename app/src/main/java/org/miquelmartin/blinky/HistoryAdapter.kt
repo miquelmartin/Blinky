@@ -19,6 +19,8 @@ import java.util.Locale
 object PocketColors {
     const val HEADER = 0xFF202E44.toInt()
     const val HISTORY = 0xFF26364D.toInt()
+    const val HISTORY_HEADING = 0x7326364D
+    const val HISTORY_FEED = 0xE026364D.toInt()
     const val TEXT = 0xFFE9EDF5.toInt()
     const val BODY = 0xFFB8C4D5.toInt()
     const val MUTED = 0xFFA5B4C8.toInt()
@@ -53,8 +55,8 @@ class HistoryAdapter(private val context: Context) : BaseAdapter() {
                     setTextColor(PocketColors.MUTED)
                     typeface = Typeface.create("sans-serif", Typeface.BOLD)
                     letterSpacing = 0.12f
-                    setPadding(dp(24), dp(22), dp(24), dp(16))
                 }
+                view.setPadding(dp(24), dp(if (position == 0) 4 else 22), dp(24), dp(16))
                 val today = LocalDate.now(zone)
                 view.text = when (row.date) {
                     today -> context.getString(R.string.history_today)
