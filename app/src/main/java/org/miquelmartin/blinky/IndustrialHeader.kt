@@ -22,6 +22,7 @@ import android.view.animation.LinearInterpolator
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 private const val PUPIL_Y = 83.4f
 
@@ -57,7 +58,6 @@ class IndustrialHeader(context: Context, brand: IndustrialBrandView, private val
 }
 
 class IndustrialBrandView(context: Context) : View(context) {
-    private val openFace = BitmapFactory.decodeResource(resources, R.drawable.blinky_mascot)
     private val closedFace = BitmapFactory.decodeResource(resources, R.drawable.blinky_eyelid_base)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val wordmark = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -68,17 +68,10 @@ class IndustrialBrandView(context: Context) : View(context) {
     private val text = context.getString(R.string.app_name).uppercase(java.util.Locale.ROOT)
     private val textBounds = Rect().also { wordmark.getTextBounds(text, 0, text.length, it) }
     private val faceBounds = RectF(20f, 14f, 88f, 96f)
-    private val eyes = Path().apply {
-        addOval(31.2f, 37.2f, 52.8f, 64.8f, Path.Direction.CW)
-        addOval(55.2f, 37.2f, 76.8f, 64.8f, Path.Direction.CW)
-    }
-    private val seams = Path().apply {
-        moveTo(36f, 51f)
-        quadTo(42f, 53f, 48f, 51f)
-        moveTo(60f, 51f)
-        quadTo(66f, 53f, 72f, 51f)
-    }
-    private var closure = 0f
+    internal val expressionState = GhostExpressionState()
+    private var frame = expressionState.frame(0f)
+    private val eyePath = Path()
+    private val seam = Path()
     private var active = false
     private var observing = false
     private var scheduled = false
@@ -92,7 +85,7 @@ class IndustrialBrandView(context: Context) : View(context) {
     }
     private val nextBlink = Runnable {
         scheduled = false
-        if (mayAnimate()) blink()
+        if (mayAnimate()) animateExpression(nextExpression(expressionState.previous))
     }
 
     init {
@@ -101,6 +94,15 @@ class IndustrialBrandView(context: Context) : View(context) {
 
     fun setActive(value: Boolean) {
         active = value
+        reconcile()
+    }
+
+    fun restoreExpressionState(visible: Boolean, previous: GhostExpression?) {
+        stopCycle()
+        expressionState.wordmarkVisible = visible
+        expressionState.previous = previous
+        frame = expressionState.frame(0f)
+        invalidate()
         reconcile()
     }
 
@@ -145,7 +147,7 @@ class IndustrialBrandView(context: Context) : View(context) {
                 observing = true
             }
             if (!mayAnimate()) stopCycle()
-            else if (!scheduled && animator == null) schedule(nextBlinkTiming().periodMillis)
+            else if (!scheduled && animator == null) schedule(Random.nextLong(5_000, 10_001))
         } else {
             stopCycle()
             stopObserving()
@@ -172,24 +174,28 @@ class IndustrialBrandView(context: Context) : View(context) {
         animator?.removeAllListeners()
         animator?.cancel()
         animator = null
-        closure = 0f
+        expressionState.finish()
+        frame = expressionState.frame(0f)
         invalidate()
     }
 
-    private fun blink() {
-        val timing = nextBlinkTiming()
+    private fun animateExpression(expression: GhostExpression) {
+        check(animator == null && expressionState.current == null) { "Expressions must not overlap." }
+        expressionState.start(expression, Random.nextBoolean())
+        val timing = nextExpressionTiming(expression)
         val started = SystemClock.uptimeMillis()
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = timing.durationMillis
             interpolator = LinearInterpolator()
             addUpdateListener {
-                closure = blinkClosure(it.animatedValue as Float)
+                frame = expressionState.frame(it.animatedValue as Float)
                 invalidate()
             }
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     animator = null
-                    closure = 0f
+                    expressionState.finish()
+                    frame = expressionState.frame(0f)
                     invalidate()
                     if (mayAnimate()) {
                         schedule((timing.periodMillis - (SystemClock.uptimeMillis() - started)).coerceAtLeast(0))
@@ -214,27 +220,51 @@ class IndustrialBrandView(context: Context) : View(context) {
         paint.style = Paint.Style.FILL
         paint.alpha = 255
         canvas.drawBitmap(closedFace, null, faceBounds, paint)
-        val eyeWindow = canvas.save()
-        canvas.clipPath(eyes)
-        canvas.clipRect(20f, 37f + 14.35f * closure, 88f, 65f - 14.35f * closure)
-        canvas.drawBitmap(openFace, null, faceBounds, paint)
-        canvas.restoreToCount(eyeWindow)
-        paint.color = 0xFFB83942.toInt()
-        paint.alpha = (255 * closure.pow(10)).roundToInt()
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 1.3f
-        paint.strokeCap = Paint.Cap.ROUND
-        canvas.drawPath(seams, paint)
+        drawEye(canvas, 42f, frame.leftClosure, frame.leftPupilX, frame.pupilY)
+        drawEye(canvas, 66f, frame.rightClosure, frame.rightPupilX, frame.pupilY)
         canvas.restoreToCount(ghost)
         val baseline = PUPIL_Y - (textBounds.top + textBounds.bottom) / 2f
         val top = baseline + textBounds.top
         val bottom = baseline + textBounds.bottom
         val shutter = canvas.save()
         // Clip the glyphs themselves; no background-colored shutter or nameplate.
-        canvas.clipRect(141f, top + textBounds.height() * closure / 2, width / scale, bottom - textBounds.height() * closure / 2)
+        val hidden = 1f - frame.wordmarkAmount
+        canvas.clipRect(141f, top + textBounds.height() * hidden / 2, width / scale, bottom - textBounds.height() * hidden / 2)
         canvas.drawText(text, 141f - textBounds.left, baseline, wordmark)
         canvas.restoreToCount(shutter)
         canvas.restoreToCount(scene)
+    }
+
+    private fun drawEye(canvas: Canvas, center: Float, closure: Float, pupilX: Float, pupilY: Float) {
+        val saved = canvas.save()
+        eyePath.reset()
+        eyePath.addOval(center - 10f, 38f, center + 10f, 64f, Path.Direction.CW)
+        canvas.clipPath(eyePath)
+        val sleepy = expressionState.current == GhostExpression.SLEEPY_LIDS
+        canvas.clipRect(
+            center - 10f, 37f + (if (sleepy) 28.7f else 14.35f) * closure,
+            center + 10f, 65f - if (sleepy) 0f else 14.35f * closure
+        )
+        paint.style = Paint.Style.FILL
+        paint.alpha = 255
+        paint.color = android.graphics.Color.WHITE
+        canvas.drawOval(center - 10f, 38f, center + 10f, 64f, paint)
+        val x = center + 4f + pupilX
+        val y = 53f + pupilY
+        paint.color = 0xFF285CE3.toInt()
+        canvas.drawOval(x - 5f, y - 7f, x + 5f, y + 7f, paint)
+        paint.color = android.graphics.Color.WHITE
+        canvas.drawCircle(x - 1.5f, y - 3f, 1.6f, paint)
+        canvas.restoreToCount(saved)
+        seam.reset()
+        seam.moveTo(center - 6f, 51f)
+        seam.quadTo(center, 53f, center + 6f, 51f)
+        paint.color = 0xFFB83942.toInt()
+        paint.alpha = (255 * closure.pow(10)).roundToInt()
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1.3f
+        paint.strokeCap = Paint.Cap.ROUND
+        canvas.drawPath(seam, paint)
     }
 
     @android.annotation.TargetApi(33)

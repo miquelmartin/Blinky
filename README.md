@@ -79,7 +79,7 @@ SQLite database and persists across app restarts, including messages received wh
 notifications were disabled. The count is total received entries, not unread or
 confirmed delivery. No sample messages are populated.
 
-Version **0.3.0 / code 4** adds the Industrial header: a larger transparent Vinyl
+Version **0.4.0 / code 5** keeps the Industrial header: a transparent Vinyl
 mascot, background-free BLINKY wordmark and icon-only token action. The history
 heading is 45%-opaque navy (down from the prototype's 68%); its text stays opaque,
 and the adjoining feed is 88%-opaque. Neither surface has an opaque parent plate.
@@ -87,11 +87,22 @@ The mascot is 10% smaller than the selected animation prototype and positioned
 so its entire silhouette, including its shadow, clears the history heading.
 The wordmark and token action stay aligned with the pupils without shrinking.
 
-The ghost eyelids and clipped wordmark blink together, with randomized 8-12 second
-start intervals and 0.8-1.2 second close/hold/open cycles at normal system animation
-speed. Only those two elements animate. Animation stops and resets when the app
-isn't visible, and Android's disabled-animator / Remove animations setting keeps
-them static and open. System animation speed preferences are respected.
+The ghost picks an expression every randomized 5-10 seconds at normal system
+animation speed, never immediately repeating or overlapping expressions. Ordinary
+blinks and curious glances are more common; cross-eyed looks and eye rolls are
+rarer. The repertoire also includes a random left/right wink, shifty eyes, sleepy
+lids and a double blink. Pupils and lids return to neutral after each expression.
+
+The wordmark starts visible. A full blink hides it with the clipped shutter
+effect, leaving it hidden until the next full blink reveals it. A double blink
+toggles it once, not twice; all other expressions leave it unchanged. The toggle
+is committed when a full-blink expression starts, including if interrupted.
+Visibility and the previous expression survive pause/resume and Activity
+recreation, but are not persisted as installation data. Animation stops offscreen,
+with no background timers. Android's disabled-animator / Remove animations setting
+keeps the eyes neutral and the wordmark in its current state. System animation
+speed preferences are respected. History, the token action and system bars never
+animate.
 
 The bundled Barlow Semi Condensed Bold font is SIL OFL 1.1 licensed, not a Windows
 font. Its [copyright and license](app/src/main/assets/fonts/OFL-BarlowSemiCondensed.txt)

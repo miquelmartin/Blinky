@@ -57,6 +57,10 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         preferences = BlinkyState.preferences(this)
         BlinkyNotifications.createChannel(this)
         createScreen()
+        brand.restoreExpressionState(
+            savedInstanceState?.getBoolean("wordmark_visible", true) ?: true,
+            GhostExpression.entries.find { it.name == savedInstanceState?.getString("previous_expression") }
+        )
         try {
             firebaseReady = FirebaseApp.initializeApp(this) != null
             if (!firebaseReady) showTokenStatus(R.string.firebase_missing)
@@ -71,6 +75,12 @@ class MainActivity : Activity(), SharedPreferences.OnSharedPreferenceChangeListe
         super.onStart()
         permissionCheckedThisOpen = false
         preferences.registerOnSharedPreferenceChangeListener(this)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("wordmark_visible", brand.expressionState.wordmarkVisible)
+        outState.putString("previous_expression", brand.expressionState.previous?.name)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onResume() {
