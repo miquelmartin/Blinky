@@ -39,23 +39,19 @@ jobs:
         run: node .github/scripts/ready-ci.cjs classify
 
   python:
-    name: Python on Windows
+    name: Python and policy tests
     needs: plan
-    runs-on: windows-2025
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
       - name: Sender and release-configuration tests
-        shell: pwsh
         run: |
-          python -m unittest discover -s sender -p 'test_*.py' -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m unittest discover -s .github/scripts -p 'test_*.py' -v
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python3 -m unittest discover -s sender -p 'test_*.py' -v
+          python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
           node --test .github/scripts/test-ready-ci.cjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   android:
     name: Android verification

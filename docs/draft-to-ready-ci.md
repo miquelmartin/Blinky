@@ -26,9 +26,11 @@ success. Checks belong to GitHub's immutable PR merge candidate, not a mutable
 branch checkout. Strict up-to-date branch protection also prevents a previously
 green result from authorizing a merge after `main` advances.
 
-The Python sender and release-configuration tests run on **Windows**, retaining
-Windows path/process coverage. The Node policy tests use Node's built-in runner.
-Android verification runs on Linux: debug unit tests, APK build, lint, and the
+All CI jobs run on **Ubuntu 24.04**. The Python sender and release-configuration
+tests are portable; none requires Windows. Linux also exercises the existing
+POSIX `0600` private-file permission assertion, which Windows cannot enforce.
+The Node policy tests use Node's built-in runner. Android verification runs debug
+unit tests, APK build, lint, and the
 existing instrumentation tests on an API 35 x86_64 emulator. No release signing,
 Firebase client config, Play credentials, or protected environment is used.
 
@@ -138,7 +140,7 @@ workflow is **not active until this configuration is merged into `main`**.
 Its absence never makes missing verification pass. Bootstrap through a PR with
 the required verification; never direct-push or bypass admins. Before merging,
 local policy/syntax checks do not prove GitHub event delivery, the token's draft
-mutation permission, or hosted Windows/emulator behavior. After an approved
+mutation permission, or hosted Linux/emulator behavior. After an approved
 merge, exercise a draft PR: ready, verify green, push, observe draft and a missing
 new-head check, ready again, then verify that failed/cancelled/stale checks block
 merging. Do not merge the exercise PR or dispatch a release without approval.
