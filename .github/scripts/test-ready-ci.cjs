@@ -99,7 +99,7 @@ test('only a current head, base, merge candidate and user readiness cycle may pa
     f => { f.pr.merge_commit_sha = 'new-merge'; },
     f => { f.pr.merge_commit_sha = null; },
     f => { f.timeline.length = 0; },
-    f => { f.timeline.push({ event: 'converted_to_draft', created_at: '2026-11-11T19:01:00Z' }); },
+    f => { f.timeline.push({ event: 'convert_to_draft', created_at: '2026-11-11T19:01:00Z' }); },
     f => { f.timeline.push({ event: 'ready_for_review', created_at: '2026-11-11T19:02:00Z' }); },
     f => { f.timeline.push({ ...f.timeline[0] }); },
     f => { f.github.rest.actions.getWorkflowRun = async () => ({ data: { head_sha: 'old-head' } }); },
@@ -127,6 +127,12 @@ test('a verification run on another fork or branch cannot supersede this PR', as
       { id: 11, head_branch: 'another-feature', head_repository: { id: 100 } },
       { id: 12, head_branch: 'feature', head_repository: { id: 200 } }
     ] : f.timeline;
+  await assertCurrentReady(f);
+});
+
+test('a single ready event after conversion in the same second is unambiguous', async () => {
+  const f = fixture();
+  f.timeline.unshift({ event: 'convert_to_draft', created_at: f.timeline[0].created_at });
   await assertCurrentReady(f);
 });
 

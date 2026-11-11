@@ -43,11 +43,12 @@ async function assertCurrentReady({ github, context }) {
     owner, repo, issue_number: event.number, per_page: 100
   });
   const transitions = timeline.filter(item =>
-    ['ready_for_review', 'converted_to_draft'].includes(item.event));
+    ['ready_for_review', 'convert_to_draft'].includes(item.event));
   const latest = transitions.at(-1);
   assert.equal(latest?.event, 'ready_for_review', 'Missing current ready transition');
   assert.equal(latest.created_at, event.updated_at, 'A newer readiness cycle superseded this run');
-  assert.equal(transitions.filter(item => item.created_at === latest.created_at).length, 1,
+  assert.equal(transitions.filter(item =>
+    item.event === 'ready_for_review' && item.created_at === latest.created_at).length, 1,
     'Ambiguous same-second readiness changes; return to draft and ready again');
   const { data: run } = await github.rest.actions.getWorkflowRun({
     owner, repo, run_id: context.runId

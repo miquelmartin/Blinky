@@ -19,7 +19,7 @@ Actions app (ID **15368**). The aggregate job always executes, even when a
 dependency fails or is skipped, and accepts only actual successful dependencies.
 It rejects a changed head, changed base, changed merge candidate, closed/draft PR,
 missing or superseded readiness transition, API failure, and rerun attempts.
-Ambiguous same-second readiness transitions and superseded duplicate runs also
+Ambiguous same-second ready events and superseded duplicate runs also
 fail closed; retry with a new draft-to-ready cycle.
 Concurrency cancels older verification runs for the same PR; cancellation is not
 success. Checks belong to GitHub's immutable PR merge candidate, not a mutable
