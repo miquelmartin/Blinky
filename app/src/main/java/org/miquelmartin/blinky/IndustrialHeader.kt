@@ -240,11 +240,23 @@ class IndustrialBrandView(context: Context) : View(context) {
         eyePath.reset()
         eyePath.addOval(center - 10f, 38f, center + 10f, 64f, Path.Direction.CW)
         canvas.clipPath(eyePath)
-        val sleepy = expressionState.current == GhostExpression.SLEEPY_LIDS
-        canvas.clipRect(
-            center - 10f, 37f + (if (sleepy) 28.7f else 14.35f) * closure,
-            center + 10f, 65f - if (sleepy) 0f else 14.35f * closure
-        )
+        val topLid = expressionState.current == GhostExpression.SLEEPY_LIDS ||
+            expressionState.current == GhostExpression.SKEPTICAL
+        eyePath.reset()
+        if (topLid) {
+            val lid = 37f + 27f * closure
+            eyePath.moveTo(center - 11f, lid)
+            eyePath.quadTo(center, lid + closure * 3f, center + 11f, lid)
+            eyePath.lineTo(center + 11f, 65f)
+            eyePath.lineTo(center - 11f, 65f)
+            eyePath.close()
+        } else if (closure < 1f) {
+            // Never pass an inverted rectangle to the renderer: it can normalize
+            // the bounds and leave a bright slit at complete closure.
+            val halfHeight = 13f * (1f - closure)
+            eyePath.addOval(center - 10f, 51f - halfHeight, center + 10f, 51f + halfHeight, Path.Direction.CW)
+        }
+        canvas.clipPath(eyePath)
         paint.style = Paint.Style.FILL
         paint.alpha = 255
         paint.color = android.graphics.Color.WHITE
@@ -252,15 +264,16 @@ class IndustrialBrandView(context: Context) : View(context) {
         val x = center + 4f + pupilX
         val y = 53f + pupilY
         paint.color = 0xFF285CE3.toInt()
-        canvas.drawOval(x - 5f, y - 7f, x + 5f, y + 7f, paint)
+        val pupilScale = frame.pupilScale
+        canvas.drawOval(x - 5f * pupilScale, y - 7f * pupilScale, x + 5f * pupilScale, y + 7f * pupilScale, paint)
         paint.color = android.graphics.Color.WHITE
-        canvas.drawCircle(x - 1.5f, y - 3f, 1.6f, paint)
+        canvas.drawCircle(x - 1.5f * pupilScale, y - 3f * pupilScale, 1.6f * pupilScale, paint)
         canvas.restoreToCount(saved)
         seam.reset()
         seam.moveTo(center - 6f, 51f)
-        seam.quadTo(center, 53f, center + 6f, 51f)
+        seam.quadTo(center, 53.5f, center + 6f, 51f)
         paint.color = 0xFFB83942.toInt()
-        paint.alpha = (255 * closure.pow(10)).roundToInt()
+        paint.alpha = if (topLid) 0 else (255 * closure.pow(6)).roundToInt()
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = 1.3f
         paint.strokeCap = Paint.Cap.ROUND

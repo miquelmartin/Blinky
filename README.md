@@ -79,7 +79,7 @@ SQLite database and persists across app restarts, including messages received wh
 notifications were disabled. The count is total received entries, not unread or
 confirmed delivery. No sample messages are populated.
 
-Version **0.4.0 / code 5** keeps the Industrial header: a transparent Vinyl
+Version **0.5.0 / code 6** keeps the Industrial header: a transparent Vinyl
 mascot, background-free BLINKY wordmark and icon-only token action. The history
 heading is 45%-opaque navy (down from the prototype's 68%); its text stays opaque,
 and the adjoining feed is 88%-opaque. Neither surface has an opaque parent plate.
@@ -92,6 +92,10 @@ animation speed, never immediately repeating or overlapping expressions. Ordinar
 blinks and curious glances are more common; cross-eyed looks and eye rolls are
 rarer. The repertoire also includes a random left/right wink, shifty eyes, sleepy
 lids and a double blink. Pupils and lids return to neutral after each expression.
+This update adds five surprise expressions, bringing the repertoire to thirteen.
+Full blinks close both eyes completely with a perceptible closed hold; winks use
+a rounded single-eye lid while the other eye remains unchanged. Sleepy lids
+linger half closed for at least 1.92 seconds before returning to neutral.
 
 The wordmark starts visible. A full blink hides it with the clipped shutter
 effect, leaving it hidden until the next full blink reveals it. A double blink

@@ -11,7 +11,7 @@ class GhostExpressionsTest {
     @Test fun randomizedStartPeriodsAndDurationsStayWithinTheApprovedBounds() {
         val random = Random(42)
         val timings = List(1_000) { nextExpressionTiming(GhostExpression.BLINK, random) }
-        assertTrue(timings.all { it.periodMillis in 5_000..10_000 && it.durationMillis in 800..1_200 })
+        assertTrue(timings.all { it.periodMillis in 5_000..10_000 && it.durationMillis in 1_000..1_300 })
         assertTrue(timings.map { it.periodMillis }.distinct().size > 100)
         assertTrue(timings.map { it.durationMillis }.distinct().size > 100)
     }
@@ -91,6 +91,7 @@ class GhostExpressionsTest {
             assertEquals(0f, end.leftPupilX, 0.0001f)
             assertEquals(0f, end.rightPupilX, 0.0001f)
             assertEquals(0f, end.pupilY, 0.0001f)
+            assertEquals(1f, end.pupilScale, 0.0001f)
             state.finish()
             assertEquals(!expression.togglesWordmark, state.wordmarkVisible)
             assertEquals(ExpressionFrame(wordmarkAmount = if (state.wordmarkVisible) 1f else 0f), state.frame(0.5f))
@@ -118,7 +119,7 @@ class GhostExpressionsTest {
         assertTrue(frame(GhostExpression.CURIOUS_GLANCE, false).leftPupilX > 0f)
         assertTrue(frame(GhostExpression.SHIFTY_EYES, time = 0.25f).leftPupilX < 0f)
         assertTrue(frame(GhostExpression.SHIFTY_EYES, time = 0.65f).leftPupilX > 0f)
-        assertEquals(0.55f, frame(GhostExpression.SLEEPY_LIDS).leftClosure, 0f)
+        assertEquals(0.5f, frame(GhostExpression.SLEEPY_LIDS).leftClosure, 0f)
         assertEquals(1f, frame(GhostExpression.DOUBLE_BLINK, time = 0.25f).leftClosure, 0f)
         assertEquals(0f, frame(GhostExpression.DOUBLE_BLINK, time = 0.5f).leftClosure, 0f)
         assertEquals(1f, frame(GhostExpression.DOUBLE_BLINK, time = 0.75f).leftClosure, 0f)
@@ -126,11 +127,37 @@ class GhostExpressionsTest {
 
     @Test fun slowCloseHoldAndOpenAreSynchronizedWithoutFlashing() {
         assertEquals(0f, blinkClosure(0f), 0.0001f)
-        assertEquals(0.5f, blinkClosure(0.21f), 0.0001f)
-        assertEquals(1f, blinkClosure(0.42f), 0.0001f)
+        assertEquals(0.5f, blinkClosure(0.16f), 0.0001f)
+        assertEquals(1f, blinkClosure(0.32f), 0.0001f)
         assertEquals(1f, blinkClosure(0.5f), 0.0001f)
-        assertEquals(1f, blinkClosure(0.58f), 0.0001f)
-        assertEquals(0.5f, blinkClosure(0.79f), 0.0001f)
+        assertEquals(1f, blinkClosure(0.68f), 0.0001f)
+        assertEquals(0.5f, blinkClosure(0.84f), 0.0001f)
         assertEquals(0f, blinkClosure(1f), 0.0001f)
+    }
+
+    @Test fun sleepyHoldAndClosedBlinkAreLongEnoughToSee() {
+        val sleepy = GhostExpressionState().apply { start(GhostExpression.SLEEPY_LIDS, true) }
+        for (step in 18..82) {
+            val frame = sleepy.frame(step / 100f)
+            assertEquals(0.5f, frame.leftClosure, 0f)
+            assertEquals(0.5f, frame.rightClosure, 0f)
+        }
+        assertTrue(GhostExpression.SLEEPY_LIDS.durationRange.first * 0.64 >= 1_920)
+        for (step in 32..68) assertEquals(1f, blinkClosure(step / 100f), 0f)
+        assertTrue(GhostExpression.BLINK.durationRange.first * 0.36 >= 360)
+        assertTrue(GhostExpression.DOUBLE_BLINK.durationRange.first / 2 * 0.36 >= 288)
+    }
+
+    @Test fun thirteenExpressionsHaveDistinctMotionAndReturnToNeutralWithoutChangingOtherState() {
+        assertEquals(13, GhostExpression.entries.size)
+        val signatures = GhostExpression.entries.map { expression ->
+            val state = GhostExpressionState().apply { start(expression, true) }
+            val frames = (0..100).map { state.frame(it / 100f).copy(wordmarkAmount = 1f) }
+            assertTrue("Every expression needs visible motion", frames.any { it != frames.first() })
+            state.finish()
+            assertEquals(ExpressionFrame(wordmarkAmount = if (expression.togglesWordmark) 0f else 1f), state.frame(0f))
+            frames
+        }
+        assertEquals(13, signatures.distinct().size)
     }
 }

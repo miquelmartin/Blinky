@@ -153,6 +153,7 @@ class IndustrialHeaderTest {
                 assertEquals(null, field("animator").get(brand))
                 assertFalse(field("scheduled").getBoolean(brand))
             }
+            brand.restoreExpressionState(false, GhostExpression.DOUBLE_BLINK)
             animate(brand, GhostExpression.BLINK)
             (field("animator").get(brand) as ValueAnimator).apply {
                 pause()
@@ -198,6 +199,48 @@ class IndustrialHeaderTest {
             }
         } finally {
             instrumentation.runOnMainSync { recreated.finish() }
+        }
+    }
+
+    @Test fun blinksFullyCloseAndEitherWinkKeepsTheOtherEyePixelIdentical() {
+        instrumentation.runOnMainSync {
+            val brand = IndustrialBrandView(instrumentation.targetContext)
+            brand.layout(0, 0, 400, 208)
+            fun render(expression: GhostExpression?, left: Boolean, fraction: Float): Bitmap {
+                brand.expressionState.finish()
+                if (expression != null) brand.expressionState.start(expression, left)
+                field("frame").set(brand, brand.expressionState.frame(fraction))
+                return Bitmap.createBitmap(400, 208, Bitmap.Config.ARGB_8888).also { brand.draw(Canvas(it)) }
+            }
+            val neutral = render(null, true, 0f)
+            fun assertClosed(image: Bitmap, fromX: Int, toX: Int) {
+                for (x in fromX..toX) for (y in 54..106) {
+                    val eyeCenter = if (fromX < 50) 26.46f else 71.82f
+                    val dx = (x - eyeCenter) / 18.9f
+                    val dy = (y - 79.62f) / 24.57f
+                    if (dx * dx + dy * dy > 0.95f) continue
+                    val pixel = image.getPixel(x, y)
+                    val white = Color.red(pixel) > 180 && Color.green(pixel) > 180 && Color.blue(pixel) > 180
+                    val blue = Color.blue(pixel) > 130 && Color.blue(pixel) > Color.red(pixel) * 1.25
+                    assertFalse("Eye white or pupil remains at complete closure ($x,$y)", white || blue)
+                }
+            }
+            for (expression in listOf(GhostExpression.BLINK, GhostExpression.DOUBLE_BLINK)) {
+                val image = render(expression, true, if (expression == GhostExpression.BLINK) 0.5f else 0.25f)
+                assertClosed(image, 7, 45)
+                assertClosed(image, 53, 91)
+                image.recycle()
+            }
+            for (left in listOf(true, false)) for (step in 0..20) {
+                val image = render(GhostExpression.WINK, left, step / 20f)
+                val stable = if (left) 52..93 else 6..47
+                for (x in stable) for (y in 53..108) {
+                    assertEquals("Wink moved or distorted the other eye", neutral.getPixel(x, y), image.getPixel(x, y))
+                }
+                if (step == 10) assertClosed(image, if (left) 7 else 53, if (left) 45 else 91)
+                image.recycle()
+            }
+            neutral.recycle()
         }
     }
 
