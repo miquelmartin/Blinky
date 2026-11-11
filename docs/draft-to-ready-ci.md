@@ -22,7 +22,9 @@ missing or superseded readiness transition, API failure, and rerun attempts.
 Ambiguous same-second ready events and superseded duplicate runs also
 fail closed; retry with a new draft-to-ready cycle.
 Concurrency cancels older verification runs for the same PR; cancellation is not
-success. Checks belong to GitHub's immutable PR merge candidate, not a mutable
+success. The executing gate tolerates GitHub's transient `queued` run metadata
+only with no terminal conclusion; actual job results and an explicit cancellation
+guard must still pass. Checks belong to GitHub's immutable PR merge candidate, not a mutable
 branch checkout. Strict up-to-date branch protection also prevents a previously
 green result from authorizing a merge after `main` advances.
 

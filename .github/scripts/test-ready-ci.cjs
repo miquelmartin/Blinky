@@ -68,22 +68,42 @@ function fixture() {
     eventName: 'pull_request', runAttempt: 1, runId: 10, repo: { owner: 'owner', repo: 'repo' },
     sha: 'merge', payload: { action: 'ready_for_review', pull_request: structuredClone(pr) }
   };
+  const run = {
+    workflow_id: 1, head_sha: 'head', run_attempt: 1, status: 'in_progress', conclusion: null
+  };
   const github = {
     rest: {
       pulls: { get: async () => ({ data: pr }) },
       issues: { listEventsForTimeline: () => {} },
       actions: {
-        getWorkflowRun: async () => ({ data: {
-          workflow_id: 1, head_sha: 'head', run_attempt: 1, status: 'in_progress', conclusion: null
-        } }),
+        getWorkflowRun: async () => ({ data: run }),
         listWorkflowRuns: () => {}
       }
     },
     paginate: async endpoint => endpoint === github.rest.actions.listWorkflowRuns ?
       [{ id: 10, head_branch: 'feature', head_repository: { id: 100 } }] : timeline
   };
-  return { github, context, pr, timeline };
+  return { github, context, pr, timeline, run };
 }
+
+test('executing gate accepts transient queued metadata but not terminal or missing run state', async () => {
+  for (const status of ['queued', 'in_progress']) {
+    const f = fixture();
+    f.run.status = status;
+    await assertCurrentReady(f);
+  }
+  for (const status of ['completed', 'waiting', undefined]) {
+    const f = fixture();
+    f.run.status = status;
+    await assert.rejects(assertCurrentReady(f));
+  }
+  for (const conclusion of ['cancelled', 'failure', 'success', undefined]) {
+    const f = fixture();
+    f.run.status = 'queued';
+    f.run.conclusion = conclusion;
+    await assert.rejects(assertCurrentReady(f));
+  }
+});
 
 test('only a current head, base, merge candidate and user readiness cycle may pass', async () => {
   await assertCurrentReady(fixture());

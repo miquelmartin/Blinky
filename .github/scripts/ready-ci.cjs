@@ -55,7 +55,8 @@ async function assertCurrentReady({ github, context }) {
   });
   assert.equal(run.head_sha, current.head.sha, 'Workflow is not for the current head');
   assert.equal(run.run_attempt, 1, 'Reruns cannot reuse a readiness cycle');
-  assert.equal(run.status, 'in_progress', 'Verification run is not active');
+  // GitHub can still report queued while a downstream job is executing.
+  assert.ok(['queued', 'in_progress'].includes(run.status), 'Verification run is not active');
   assert.equal(run.conclusion, null, 'Verification run was already concluded');
   const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
     owner, repo, workflow_id: run.workflow_id, head_sha: current.head.sha,
