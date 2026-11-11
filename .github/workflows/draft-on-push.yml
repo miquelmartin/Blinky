@@ -1,0 +1,44 @@
+name: Return changed PRs to draft
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: draft-on-push-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  draft:
+    name: Invalidate readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # Metadata only: never check out PR code, load PR scripts or use release secrets.
+      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const event = context.payload.pull_request;
+            const { data: current } = await github.rest.pulls.get({
+              owner, repo, pull_number: event.number
+            });
+            if (current.state !== 'open' || current.draft ||
+                current.head.sha !== event.head.sha) return;
+            const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
+              owner, repo, issue_number: current.number, per_page: 100
+            });
+            const latestReady = timeline.filter(e => e.event === 'ready_for_review').at(-1);
+            // A delayed duplicate must not undo a later explicit draft-to-ready cycle.
+            if (latestReady && latestReady.created_at > event.updated_at) return;
+            await github.graphql(`
+              mutation($id: ID!) {
+                convertPullRequestToDraft(input: {pullRequestId: $id}) {
+                  pullRequest { isDraft }
+                }
+              }`, { id: current.node_id });
+            core.notice('Source changed: mark this draft ready manually to request fresh verification.');

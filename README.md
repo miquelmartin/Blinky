@@ -206,6 +206,12 @@ not update the app's received-message history through the service.
 
 ## Checks and real delivery test
 
+Pull requests use [draft-to-ready verification](docs/draft-to-ready-ci.md).
+Open a draft, push changes, then manually mark it ready to run checks. After
+another push, return to draft and mark ready again; pushes and merges do not run
+verification. The default branch requires a current successful `Ready verification`
+check and an up-to-date PR. Signed releases remain separate and manual.
+
 Sender checks use only the standard library, no credentials or network:
 
 ```powershell
