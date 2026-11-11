@@ -1,0 +1,43 @@
+name: Android dependency submission
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: blinky-android-dependency-submission
+  cancel-in-progress: false
+
+jobs:
+  dependencies:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the dependency source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Resolve and submit Gradle dependencies
+        uses: gradle/actions/dependency-submission@8da46b539cd8fe6ab27ca75128919a18d757604c # v6
+        env:
+          GITHUB_DEPENDENCY_GRAPH_JOB_CORRELATOR: blinky-android-dependencies
+        with:
+          dependency-graph: generate-and-submit
+          dependency-graph-continue-on-failure: false
+          additional-arguments: --no-daemon --console=plain --no-configuration-cache
+          cache-provider: basic
+          cache-disabled: true
+          build-scan-publish: false
+          validate-wrappers: true
