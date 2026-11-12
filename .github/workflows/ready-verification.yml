@@ -1,9 +1,9 @@
-name: Draft-to-ready verification
+name: Pull request verification
 
 on:
   pull_request:
     branches: [main]
-    types: [ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, edited]
 
 permissions:
   contents: read
@@ -26,12 +26,12 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Require a current ready event
+      - name: Require a current ready pull request
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
         with:
           script: |
-            const { assertCurrentReady } = require('./.github/scripts/ready-ci.cjs');
-            await assertCurrentReady({ github, context });
+            const { assertCurrentPR } = require('./.github/scripts/ready-ci.cjs');
+            await assertCurrentPR({ github, context });
       - name: Conservatively classify the complete merge diff
         id: changes
         env:
@@ -122,9 +122,9 @@ jobs:
           VERIFICATION_NEEDS: ${{ toJSON(needs) }}
         with:
           script: |
-            const { assertResults, assertCurrentReady } = require('./.github/scripts/ready-ci.cjs');
+            const { assertResults, assertCurrentPR } = require('./.github/scripts/ready-ci.cjs');
             assertResults(JSON.parse(process.env.VERIFICATION_NEEDS));
-            await assertCurrentReady({ github, context });
+            await assertCurrentPR({ github, context });
       - name: Reject cancellation even after dependencies have succeeded
         if: always() && cancelled()
         run: exit 1

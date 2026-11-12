@@ -33,7 +33,7 @@ can take a few minutes to index a submission. This is separate from build/test
 verification: a successful submission is not evidence that the app compiles,
 passes tests, receives notifications or has been released.
 
-The workflow is independent of draft-to-ready CI and manual Android releases. It
+The workflow is independent of pull request CI and manual Android releases. It
 does not replace a required verification check or change release permissions.
 
 ## Dependabot alerts and updates
@@ -51,15 +51,12 @@ is reviewed and merged into `main`. GitHub's `daily` interval checks on weekdays
 security-fix PRs are independent of the version-update schedule. The configuration
 does not enable automatic merging or release publishing.
 
-Dependabot PRs need the same human review and current-head verification as other
-changes. Once draft-to-ready CI is merged, its metadata workflow returns newly
-opened or updated PRs to draft. To request verification, inspect the update and
-manually mark it ready. If a Dependabot PR remains ready (for example, because
-GitHub restricts a bot-triggered token), first convert it to draft and then mark
-it ready yourself. Repeat after any bot push, rebase or base-branch change. Do not
-rely on a rerun or old successful check; the fail-closed required gate must pass for
-the current readiness cycle. No CI credentials or release secrets are added for
-Dependabot.
+Dependabot PRs need the same human review and
+[current-head/base verification](pr-verification.md) as other changes. Normal
+ready PRs run verification on opening and after bot pushes. No draft conversion
+or token mutation permission is needed. Update the branch and verify again if
+`main` advances; an unchanged merge candidate may rerun without a ready cycle.
+No CI credentials or release secrets are added for Dependabot.
 
 Update PRs do not merge themselves, so dependencies are only upgraded after a
 reviewed merge. After merging Gradle changes, manually refresh the Android

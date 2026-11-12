@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { androidNeeded, assertResults, assertCurrentReady } = require('./ready-ci.cjs');
+const { androidNeeded, assertResults, assertCurrentPR } = require('./ready-ci.cjs');
 
 test('only known independent sender and Markdown documentation changes avoid Android', () => {
   assert.equal(androidNeeded(['README.md', 'docs/android-releases.md',
@@ -57,153 +57,105 @@ test('aggregate requires proof matching the Android decision', () => {
 });
 
 function fixture() {
-  const time = '2026-11-11T19:00:00Z';
   const pr = {
     number: 7, state: 'open', draft: false,
     head: { sha: 'head', ref: 'feature', repo: { id: 100 } },
-    base: { ref: 'main', sha: 'base' }, merge_commit_sha: 'merge', updated_at: time
+    base: { ref: 'main', sha: 'base' }, merge_commit_sha: 'merge'
   };
-  const timeline = [{ event: 'ready_for_review', created_at: time }];
   const context = {
     eventName: 'pull_request', runAttempt: 1, runId: 10, repo: { owner: 'owner', repo: 'repo' },
-    sha: 'merge', payload: { action: 'ready_for_review', pull_request: structuredClone(pr) }
+    sha: 'merge', payload: { action: 'opened', pull_request: structuredClone(pr) }
   };
   const run = {
-    workflow_id: 1, head_sha: 'head', run_attempt: 1, status: 'in_progress', conclusion: null
+    workflow_id: 1, head_sha: 'head', head_branch: 'feature', head_repository: { id: 100 },
+    event: 'pull_request', run_attempt: 1, status: 'in_progress', conclusion: null
   };
   const github = {
     rest: {
       pulls: { get: async () => ({ data: pr }) },
-      issues: { listEventsForTimeline: () => {} },
       actions: {
-        getWorkflowRun: async () => ({ data: run }),
-        listWorkflowRuns: () => {}
+        getWorkflowRun: async () => ({ data: run })
       }
-    },
-    paginate: async endpoint => endpoint === github.rest.actions.listWorkflowRuns ?
-      [{ id: 10, head_branch: 'feature', head_repository: { id: 100 } }] : timeline
+    }
   };
-  return { github, context, pr, timeline, run };
+  return { github, context, pr, run };
 }
 
 test('executing gate accepts transient queued metadata but not terminal or missing run state', async () => {
   for (const status of ['queued', 'in_progress']) {
     const f = fixture();
     f.run.status = status;
-    await assertCurrentReady(f);
+    await assertCurrentPR(f);
   }
   for (const status of ['completed', 'waiting', undefined]) {
     const f = fixture();
     f.run.status = status;
-    await assert.rejects(assertCurrentReady(f));
+    await assert.rejects(assertCurrentPR(f));
   }
   for (const conclusion of ['cancelled', 'failure', 'success', undefined]) {
     const f = fixture();
     f.run.status = 'queued';
     f.run.conclusion = conclusion;
-    await assert.rejects(assertCurrentReady(f));
+    await assert.rejects(assertCurrentPR(f));
   }
 });
 
-test('only a current head, base, merge candidate and user readiness cycle may pass', async () => {
-  await assertCurrentReady(fixture());
+test('only a current ready head, base, merge candidate and source may pass', async () => {
+  await assertCurrentPR(fixture());
   const changes = [
     f => { f.context.eventName = 'push'; },
-    f => { f.context.payload.action = 'synchronize'; },
-    f => { f.context.runAttempt = 2; },
+    f => { f.context.payload.action = 'closed'; },
     f => { f.pr.state = 'closed'; },
     f => { f.pr.draft = true; },
     f => { f.pr.head.sha = 'pushed-head'; },
+    f => { f.pr.head.ref = 'other-feature'; },
+    f => { f.pr.head.repo.id = 200; },
     f => { f.pr.base.sha = 'new-base'; },
     f => { f.pr.base.ref = 'other'; },
     f => { f.pr.merge_commit_sha = 'new-merge'; },
     f => { f.pr.merge_commit_sha = null; },
-    f => { f.timeline.length = 0; },
-    f => { f.timeline.push({ event: 'convert_to_draft', created_at: '2026-11-11T19:01:00Z' }); },
-    f => { f.timeline.push({ event: 'ready_for_review', created_at: '2026-11-11T19:02:00Z' }); },
-    f => { f.timeline.push({ ...f.timeline[0] }); },
-    f => { f.github.rest.actions.getWorkflowRun = async () => ({ data: { head_sha: 'old-head' } }); },
-    f => { f.github.rest.actions.getWorkflowRun = async () => ({ data: {
-      head_sha: 'head', run_attempt: 1, status: 'completed', conclusion: 'cancelled'
-    } }); },
-    f => { f.github.paginate = async endpoint =>
-      endpoint === f.github.rest.actions.listWorkflowRuns ? [
-        { id: 10, head_branch: 'feature', head_repository: { id: 100 } },
-        { id: 11, head_branch: 'feature', head_repository: { id: 100 } }
-      ] : f.timeline; }
+    f => { f.run.head_sha = 'old-head'; },
+    f => { f.run.head_branch = 'another-feature'; },
+    f => { f.run.head_repository.id = 200; },
+    f => { f.run.event = 'workflow_dispatch'; },
+    f => { f.run.run_attempt = 2; }
   ];
   for (const change of changes) {
     const f = fixture();
     change(f);
-    await assert.rejects(assertCurrentReady(f));
+    await assert.rejects(assertCurrentPR(f));
   }
 });
 
-test('a verification run on another fork or branch cannot supersede this PR', async () => {
-  const f = fixture();
-  f.github.paginate = async endpoint =>
-    endpoint === f.github.rest.actions.listWorkflowRuns ? [
-      { id: 10, head_branch: 'feature', head_repository: { id: 100 } },
-      { id: 11, head_branch: 'another-feature', head_repository: { id: 100 } },
-      { id: 12, head_branch: 'feature', head_repository: { id: 200 } }
-    ] : f.timeline;
-  await assertCurrentReady(f);
+test('normal ready PR lifecycle events verify without a readiness epoch', async () => {
+  for (const action of ['opened', 'reopened', 'synchronize', 'ready_for_review', 'edited']) {
+    const f = fixture();
+    f.context.payload.action = action;
+    await assertCurrentPR(f);
+  }
 });
 
-test('a single ready event after conversion in the same second is unambiguous', async () => {
+test('unchanged merge candidates can rerun and do not require a new ready transition', async () => {
   const f = fixture();
-  f.timeline.unshift({ event: 'convert_to_draft', created_at: f.timeline[0].created_at });
-  await assertCurrentReady(f);
+  f.context.runAttempt = 2;
+  f.run.run_attempt = 2;
+  await assertCurrentPR(f);
+  f.pr.base.sha = 'advanced-base';
+  await assert.rejects(assertCurrentPR(f), /Base changed/);
 });
 
 test('API failures cannot become successful verification', async () => {
   const f = fixture();
   f.github.rest.pulls.get = async () => { throw new Error('API unavailable'); };
-  await assert.rejects(assertCurrentReady(f), /API unavailable/);
+  await assert.rejects(assertCurrentPR(f), /API unavailable/);
 });
 
-const { readFileSync } = require('node:fs');
-const { join } = require('node:path');
-const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
-const draftScript = readFileSync(join(__dirname, '../workflows/draft-on-push.yml'), 'utf8')
-  .split('script: |')[1].split('\n').map(line => line.replace(/^ {12}/, '')).join('\n');
-const draftOnPush = new AsyncFunction('github', 'context', 'core', draftScript);
-
-function draftFixture() {
+test('read-only bot and fork pull requests use the same current-source verification', async () => {
   const f = fixture();
-  f.context.payload.pull_request.updated_at = '2026-11-11T19:01:00Z';
-  f.pr.node_id = 'PR_node';
-  f.mutations = [];
-  f.github.graphql = async (query, variables) => f.mutations.push({ query, variables });
-  f.core = { notice: () => {} };
-  return f;
-}
-
-test('push controller returns the current ready head to draft, without marking ready', async () => {
-  const f = draftFixture();
-  await draftOnPush(f.github, f.context, f.core);
-  assert.equal(f.mutations.length, 1);
-  assert.match(f.mutations[0].query, /convertPullRequestToDraft/);
-  assert.deepEqual(f.mutations[0].variables, { id: 'PR_node' });
-});
-
-test('late or duplicate pushes cannot undo a later ready cycle or mutate unrelated heads', async () => {
-  const changes = [
-    f => { f.pr.draft = true; },
-    f => { f.pr.state = 'closed'; },
-    f => { f.pr.head.sha = 'new-head'; },
-    f => { f.timeline.push({ event: 'ready_for_review', created_at: '2026-11-11T19:02:00Z' }); }
-  ];
-  for (const change of changes) {
-    const f = draftFixture();
-    change(f);
-    await draftOnPush(f.github, f.context, f.core);
-    assert.equal(f.mutations.length, 0);
-  }
-});
-
-test('token draft-mutation failures remain visible workflow failures', async () => {
-  const f = draftFixture();
-  f.github.graphql = async () => { throw new Error('Forbidden'); };
-  await assert.rejects(draftOnPush(f.github, f.context, f.core), /Forbidden/);
+  f.pr.head.ref = 'dependabot/gradle/upgrade';
+  f.pr.head.repo.id = 200;
+  f.context.payload.pull_request = structuredClone(f.pr);
+  f.run.head_branch = f.pr.head.ref;
+  f.run.head_repository.id = 200;
+  await assertCurrentPR(f);
 });

@@ -23,11 +23,10 @@ function assertResults(needs) {
     'Android verification must finish or explicitly prove it is unnecessary');
 }
 
-async function assertCurrentReady({ github, context }) {
+async function assertCurrentPR({ github, context }) {
   assert.equal(context.eventName, 'pull_request');
-  assert.equal(context.payload.action, 'ready_for_review');
-  assert.equal(Number(context.runAttempt ?? process.env.GITHUB_RUN_ATTEMPT), 1,
-    'Reruns are not a new ready event; return to draft and mark ready again');
+  assert.ok(['opened', 'reopened', 'synchronize', 'ready_for_review', 'edited']
+    .includes(context.payload.action), 'Unsupported verification event');
   const event = context.payload.pull_request;
   const { owner, repo } = context.repo;
   const { data: current } = await github.rest.pulls.get({
@@ -37,38 +36,25 @@ async function assertCurrentReady({ github, context }) {
   assert.equal(current.draft, false, 'PR is no longer ready');
   assert.equal(current.base.ref, 'main');
   assert.equal(current.head.sha, event.head.sha, 'PR head changed');
-  assert.equal(current.base.sha, event.base.sha, 'Base changed; update and request fresh verification');
+  assert.equal(current.head.ref, event.head.ref, 'PR source branch changed');
+  assert.equal(current.head.repo.id, event.head.repo.id, 'PR source repository changed');
+  assert.equal(current.base.sha, event.base.sha, 'Base changed; update the branch and verify again');
   assert.equal(current.merge_commit_sha, context.sha, 'Merge candidate changed or is unavailable');
-  const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
-    owner, repo, issue_number: event.number, per_page: 100
-  });
-  const transitions = timeline.filter(item =>
-    ['ready_for_review', 'convert_to_draft'].includes(item.event));
-  const latest = transitions.at(-1);
-  assert.equal(latest?.event, 'ready_for_review', 'Missing current ready transition');
-  assert.equal(latest.created_at, event.updated_at, 'A newer readiness cycle superseded this run');
-  assert.equal(transitions.filter(item =>
-    item.event === 'ready_for_review' && item.created_at === latest.created_at).length, 1,
-    'Ambiguous same-second readiness changes; return to draft and ready again');
   const { data: run } = await github.rest.actions.getWorkflowRun({
     owner, repo, run_id: context.runId
   });
   assert.equal(run.head_sha, current.head.sha, 'Workflow is not for the current head');
-  assert.equal(run.run_attempt, 1, 'Reruns cannot reuse a readiness cycle');
+  assert.equal(run.head_branch, current.head.ref, 'Workflow source branch changed');
+  assert.equal(run.head_repository.id, current.head.repo.id, 'Workflow source repository changed');
+  assert.equal(run.event, 'pull_request', 'Workflow is not a PR verification');
+  assert.equal(run.run_attempt, Number(context.runAttempt ?? process.env.GITHUB_RUN_ATTEMPT),
+    'Workflow attempt changed');
   // GitHub can still report queued while a downstream job is executing.
   assert.ok(['queued', 'in_progress'].includes(run.status), 'Verification run is not active');
   assert.equal(run.conclusion, null, 'Verification run was already concluded');
-  const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-    owner, repo, workflow_id: run.workflow_id, head_sha: current.head.sha,
-    branch: event.head.ref, event: 'pull_request', per_page: 100
-  });
-  const sameSource = runs.filter(item =>
-    item.head_repository?.id === event.head.repo.id && item.head_branch === event.head.ref);
-  assert.equal(Math.max(...sameSource.map(item => item.id)), context.runId,
-    'A newer verification run superseded this run');
 }
 
-module.exports = { androidNeeded, assertResults, assertCurrentReady };
+module.exports = { androidNeeded, assertResults, assertCurrentPR };
 
 if (require.main === module) {
   assert.equal(process.argv[2], 'classify');
