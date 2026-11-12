@@ -48,6 +48,7 @@ def wait_for_framework(adb, seconds=180):
 
 def main():
     sdk = Path(os.environ["ANDROID_HOME"])
+    tools = sdk / "cmdline-tools" / "latest" / "bin"
     temporary = Path(os.environ["RUNNER_TEMP"])
     avd_home = temporary / "blinky-avd"
     avd_home.mkdir()
@@ -58,9 +59,9 @@ def main():
     log_path = temporary / "blinky-emulator.log"
     try:
         print("Installing the API37 Google APIs image and emulator.", flush=True)
-        run(["sdkmanager", "--install", "emulator", "platform-tools",
+        run([tools / "sdkmanager", "--install", "emulator", "platform-tools",
              "system-images;android-37.0;google_apis;x86_64"], 180)
-        run(["avdmanager", "create", "avd", "--force", "--name", "blinky-ci",
+        run([tools / "avdmanager", "create", "avd", "--force", "--name", "blinky-ci",
              "--package", "system-images;android-37.0;google_apis;x86_64",
              "--device", "pixel_2"], 30)
         with (avd_home / "blinky-ci.avd" / "config.ini").open("a", encoding="utf-8") as config:
@@ -77,6 +78,9 @@ def main():
             run([*adb, "shell", "settings", "put", "global", setting, "0.0"], 10)
         run([*adb, "shell", "df", "-h", "/data"], 10)
         run(["sh", "./gradlew", "--daemon", "--console=plain", ":app:connectedDebugAndroidTest"], 180)
+        run(["python3", ".github/scripts/verify_test_inventory.py",
+             "--source", "app/src/androidTest",
+             "--reports", "app/build/outputs/androidTest-results/connected"], 15)
         completed = True
     finally:
         try:

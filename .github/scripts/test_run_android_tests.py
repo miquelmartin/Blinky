@@ -69,7 +69,7 @@ class AndroidReadinessTests(unittest.TestCase):
             def command(args, seconds, **kwargs):
                 if "logcat" in args:
                     raise OSError("diagnostic failed")
-                if args[0] == "sdkmanager":
+                if Path(args[0]).name == "sdkmanager":
                     (root / "blinky-avd" / "blinky-ci.avd").mkdir()
                 return self.response("")
 
@@ -79,6 +79,29 @@ class AndroidReadinessTests(unittest.TestCase):
                     main()
             start.return_value.terminate.assert_called_once()
             start.return_value.wait.assert_called_once_with(timeout=5)
+
+    @patch("run_android_tests.wait_for_framework")
+    @patch("run_android_tests.subprocess.Popen")
+    @patch("run_android_tests.run")
+    def test_native_execution_and_inventory_must_both_finish_before_cleanup(self, execute, start, wait):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            start.return_value.poll.return_value = None
+
+            def command(args, seconds, **kwargs):
+                if Path(args[0]).name == "avdmanager":
+                    (root / "blinky-avd" / "blinky-ci.avd").mkdir()
+                return self.response("")
+
+            execute.side_effect = command
+            with patch.dict(os.environ, {"ANDROID_HOME": directory, "RUNNER_TEMP": directory}):
+                main()
+            commands = [call.args[0] for call in execute.call_args_list]
+            self.assertEqual(root / "cmdline-tools" / "latest" / "bin" / "sdkmanager", commands[0][0])
+            self.assertEqual(root / "cmdline-tools" / "latest" / "bin" / "avdmanager", commands[1][0])
+            self.assertEqual(1, sum(":app:connectedDebugAndroidTest" in cmd for cmd in commands))
+            self.assertIn("verify_test_inventory.py", str(commands[-1]))
+            start.return_value.terminate.assert_called_once()
 
 
 if __name__ == "__main__":

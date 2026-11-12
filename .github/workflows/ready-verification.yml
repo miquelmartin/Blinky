@@ -90,6 +90,8 @@ jobs:
         timeout-minutes: 6
         if: needs.plan.outputs.android == 'true'
         run: |
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
           timeout --kill-after=15s 5m sh ./gradlew --daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
           timeout --kill-after=10s 15s python3 .github/scripts/verify_test_inventory.py --source app/src/test --reports app/build/test-results/testDebugUnitTest
       - name: Enable the Android emulator's KVM access
@@ -103,10 +105,6 @@ jobs:
         timeout-minutes: 9
         if: needs.plan.outputs.android == 'true'
         run: timeout --kill-after=15s 8m python3 .github/scripts/run_android_tests.py
-      - name: Require complete native test reports
-        timeout-minutes: 1
-        if: needs.plan.outputs.android == 'true'
-        run: timeout --kill-after=10s 15s python3 .github/scripts/verify_test_inventory.py --source app/src/androidTest --reports app/build/outputs/androidTest-results/connected
       - name: Stop the job-local Gradle daemon
         timeout-minutes: 1
         if: always() && needs.plan.outputs.android == 'true'
