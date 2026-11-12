@@ -27,7 +27,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Require a current ready pull request
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { assertCurrentPR } = require('./.github/scripts/ready-ci.cjs');
@@ -117,7 +117,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Reject missing, unsuccessful or stale verification
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           VERIFICATION_NEEDS: ${{ toJSON(needs) }}
         with:
