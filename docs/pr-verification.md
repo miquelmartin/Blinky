@@ -82,13 +82,24 @@ printed `BUILD SUCCESSFUL`. That is **not** a complete-native-coverage timing
 baseline. The API37 AVD now explicitly has a 4 GiB data partition, preserving its
 Pixel 2/four-core/2 GiB RAM/512 MiB heap settings.
 
+The pinned emulator action also has an
+[upstream framework-readiness race](https://github.com/ReactiveCircus/android-emulator-runner/issues/489):
+its first input command can fail after `sys.boot_completed=1` but before Android
+services are usable. The owned startup script instead requires two consecutive
+complete checks of boot completion, boot animation, input, package and settings
+services before unlocking and disabling animations. This is bounded startup
+polling, not a test retry. It uses the same SDK tools/image/hardware settings,
+terminates its emulator process in `finally`, and captures bounded logcat and
+emulator diagnostics on failure. No unmerged third-party action fork is executed.
+
 Verification job ceilings are 2 + 3 + 15 + 2 = **22 aggregate runner-minutes per
 attempt**, down from 55. This is not measured savings, parallel wall time or a
 billing cap; reruns and multiple PRs multiply usage. The Android limit includes
 headroom over the observed 7m24s job, but complete coverage must fit or the run
 fails. Build/lint/unit has a five-minute process deadline (six-minute step);
-native execution has three minutes after emulator setup, boot has five minutes,
-and its overall action has eight minutes. Process deadlines use a finite kill
+native execution has three minutes after emulator setup, framework readiness
+has three minutes, SDK installation has three minutes, and the complete native
+process has eight minutes (nine-minute step). Process deadlines use a finite kill
 grace, daemon cleanup has 30 seconds, and all remaining steps also have finite
 limits. A timeout is failure, never proof that remaining tests were unnecessary.
 The source/report validator and retained failure reports are the completion

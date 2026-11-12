@@ -100,21 +100,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run existing instrumentation tests on an emulator
-        timeout-minutes: 8
+        timeout-minutes: 9
         if: needs.plan.outputs.android == 'true'
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
-        with:
-          api-level: '37.0'
-          target: google_apis
-          arch: x86_64
-          profile: pixel_2
-          cores: 4
-          ram-size: 2048M
-          heap-size: 512M
-          disk-size: 4G
-          emulator-boot-timeout: 300
-          disable-animations: true
-          script: timeout --kill-after=15s 3m sh ./gradlew --daemon --console=plain :app:connectedDebugAndroidTest
+        run: timeout --kill-after=15s 8m python3 .github/scripts/run_android_tests.py
       - name: Require complete native test reports
         timeout-minutes: 1
         if: needs.plan.outputs.android == 'true'
@@ -135,6 +123,8 @@ jobs:
             app/build/reports/tests/
             app/build/reports/androidTests/
             app/build/reports/lint-results-debug.*
+            ${{ runner.temp }}/blinky-emulator.log
+            ${{ runner.temp }}/blinky-logcat.txt
           if-no-files-found: warn
           retention-days: 3
       - name: Record completed verification or proven irrelevance
