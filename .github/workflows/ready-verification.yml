@@ -18,21 +18,24 @@ jobs:
   plan:
     name: Classify changes
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 2
     outputs:
       android: ${{ steps.changes.outputs.android }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 1
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: Require a current ready pull request
+        timeout-minutes: 1
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { assertCurrentPR } = require('./.github/scripts/ready-ci.cjs');
             await assertCurrentPR({ github, context });
       - name: Conservatively classify the complete merge diff
+        timeout-minutes: 1
         id: changes
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -42,26 +45,29 @@ jobs:
     name: Python and policy tests
     needs: plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 1
         with:
           persist-credentials: false
       - name: Sender and release-configuration tests
+        timeout-minutes: 2
         run: |
-          python3 -m unittest discover -s sender -p 'test_*.py' -v
-          python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
-          node --test .github/scripts/test-ready-ci.cjs
+          timeout --kill-after=10s 30s python3 -m unittest discover -s sender -p 'test_*.py' -v
+          timeout --kill-after=10s 30s python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
+          timeout --kill-after=10s 30s node --test .github/scripts/test-ready-ci.cjs
 
   android:
     name: Android verification
     needs: plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 15
     outputs:
       evidence: ${{ steps.evidence.outputs.result }}
     steps:
       - name: Require an explicit change-classification decision
+        timeout-minutes: 1
         env:
           ANDROID: ${{ needs.plan.outputs.android }}
         run: |
@@ -70,24 +76,31 @@ jobs:
             *) echo "::error::Missing or invalid Android decision"; exit 1 ;;
           esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 1
         if: needs.plan.outputs.android == 'true'
         with:
           persist-credentials: false
       - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        timeout-minutes: 2
         if: needs.plan.outputs.android == 'true'
         with:
           distribution: temurin
           java-version: '17'
       - name: Build, lint and run Android unit tests without release credentials
+        timeout-minutes: 6
         if: needs.plan.outputs.android == 'true'
-        run: sh ./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+        run: |
+          timeout --kill-after=15s 5m sh ./gradlew --daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+          timeout --kill-after=10s 15s python3 .github/scripts/verify_test_inventory.py --source app/src/test --reports app/build/test-results/testDebugUnitTest
       - name: Enable the Android emulator's KVM access
+        timeout-minutes: 1
         if: needs.plan.outputs.android == 'true'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run existing instrumentation tests on an emulator
+        timeout-minutes: 8
         if: needs.plan.outputs.android == 'true'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
@@ -98,9 +111,34 @@ jobs:
           cores: 4
           ram-size: 2048M
           heap-size: 512M
+          disk-size: 4G
+          emulator-boot-timeout: 300
           disable-animations: true
-          script: sh ./gradlew --no-daemon --console=plain :app:connectedDebugAndroidTest
+          script: timeout --kill-after=15s 3m sh ./gradlew --daemon --console=plain :app:connectedDebugAndroidTest
+      - name: Require complete native test reports
+        timeout-minutes: 1
+        if: needs.plan.outputs.android == 'true'
+        run: timeout --kill-after=10s 15s python3 .github/scripts/verify_test_inventory.py --source app/src/androidTest --reports app/build/outputs/androidTest-results/connected
+      - name: Stop the job-local Gradle daemon
+        timeout-minutes: 1
+        if: always() && needs.plan.outputs.android == 'true'
+        run: timeout --kill-after=10s 30s sh ./gradlew --stop --console=plain
+      - name: Retain bounded Android failure diagnostics
+        timeout-minutes: 1
+        if: failure() && needs.plan.outputs.android == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: android-verification-failure
+          path: |
+            app/build/test-results/
+            app/build/outputs/androidTest-results/
+            app/build/reports/tests/
+            app/build/reports/androidTests/
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 3
       - name: Record completed verification or proven irrelevance
+        timeout-minutes: 1
         id: evidence
         env:
           ANDROID: ${{ needs.plan.outputs.android }}
@@ -116,12 +154,14 @@ jobs:
     if: always()
     needs: [plan, python, android]
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 1
         with:
           persist-credentials: false
       - name: Reject missing, unsuccessful or stale verification
+        timeout-minutes: 1
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           VERIFICATION_NEEDS: ${{ toJSON(needs) }}
@@ -131,9 +171,11 @@ jobs:
             assertResults(JSON.parse(process.env.VERIFICATION_NEEDS));
             await assertCurrentPR({ github, context });
       - name: Reject cancellation even after dependencies have succeeded
+        timeout-minutes: 1
         if: always() && cancelled()
         run: exit 1
       - name: Require a successful gate
+        timeout-minutes: 1
         if: always()
         env:
           PRIOR_STATUS: ${{ job.status }}

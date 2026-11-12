@@ -18,7 +18,6 @@ import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -132,8 +131,6 @@ class IndustrialHeaderTest {
         instrumentation.runOnMainSync {
             brand.setActive(false)
             brand.layout(0, 0, 400, 208)
-            val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "expressions")
-            check(directory.mkdirs() || directory.isDirectory)
             for (expression in GhostExpression.entries) {
                 brand.restoreExpressionState(true, null)
                 animate(brand, expression)
@@ -143,11 +140,8 @@ class IndustrialHeaderTest {
                     animator.currentPlayTime = animator.duration * step / 20
                     val image = Bitmap.createBitmap(400, 208, Bitmap.Config.ARGB_8888)
                     brand.draw(Canvas(image))
-                    File(directory, "${expression.name}-$step.png").outputStream().use {
-                        image.compress(Bitmap.CompressFormat.PNG, 100, it)
-                    }
                     for (x in 0..130) for (y in 159 until 208) {
-                        assertEquals("Expression overlaps history", 0, Color.alpha(image.getPixel(x, y)))
+                        assertEquals("${expression.name} frame $step overlaps history at ($x,$y)", 0, Color.alpha(image.getPixel(x, y)))
                     }
                     if (!expression.togglesWordmark) assertEquals(1f, currentFrame(brand).wordmarkAmount, 0f)
                     image.recycle()

@@ -53,6 +53,47 @@ The emulator uses an explicit Pixel 2 profile, four cores, 2 GiB RAM and a
 512 MiB heap instead of the legacy no-profile AVD's 64 MiB heap. Boot timeout or
 failed native tests still fail the required gate.
 
+## Runtime and completion evidence
+
+The Android job reuses one job-local Gradle daemon across build/lint/unit and
+instrumentation invocations, then stops it in bounded, always-run cleanup.
+Gradle's existing up-to-date task reuse is retained; no build task or test is
+removed. No cross-PR cache, retries, release configuration or signing input is
+introduced.
+
+All 13 expressions still render at all 21 sampled frames with the same pixel,
+wordmark and state assertions. The test no longer encodes and writes 273 PNGs
+to emulator storage: no repository command or CI artifact consumed those files.
+Assertion failures retain expression/frame/pixel coordinates; Gradle stack traces
+and failure-only XML/HTML/lint reports remain available (three-day retention,
+one-minute upload limit). Successful runs upload no diagnostic artifacts.
+
+Both Android suites must produce XML reports matching every `@Test` method in
+their respective source trees exactly once. Missing, empty, malformed, partial,
+duplicate, unexpected, failed or skipped results fail verification even when
+Gradle exits zero. Unsupported source test declarations fail closed and require
+an explicit inventory-parser update, not an exemption.
+
+This catches a real false-green baseline:
+[run 43128841819](https://github.com/miquelmartin/Blinky/actions/runs/43128841819)
+spent 7m24s in Android (2m46s build/lint/unit, 4m32s emulator/native), but its APK
+installer reported `Requested internal only, but not enough space` before Gradle
+printed `BUILD SUCCESSFUL`. That is **not** a complete-native-coverage timing
+baseline. The API37 AVD now explicitly has a 4 GiB data partition, preserving its
+Pixel 2/four-core/2 GiB RAM/512 MiB heap settings.
+
+Verification job ceilings are 2 + 3 + 15 + 2 = **22 aggregate runner-minutes per
+attempt**, down from 55. This is not measured savings, parallel wall time or a
+billing cap; reruns and multiple PRs multiply usage. The Android limit includes
+headroom over the observed 7m24s job, but complete coverage must fit or the run
+fails. Build/lint/unit has a five-minute process deadline (six-minute step);
+native execution has three minutes after emulator setup, boot has five minutes,
+and its overall action has eight minutes. Process deadlines use a finite kill
+grace, daemon cleanup has 30 seconds, and all remaining steps also have finite
+limits. A timeout is failure, never proof that remaining tests were unnecessary.
+The source/report validator and retained failure reports are the completion
+evidence; a zero exit code alone is insufficient.
+
 Android is omitted only when every changed path is known-independent: `README.md`,
 Markdown under `docs/` or `.github/skills/`, or files under `sender/`. The complete
 base-to-merge diff includes deletions and both sides of renames. Empty diffs,
