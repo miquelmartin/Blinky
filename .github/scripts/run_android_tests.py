@@ -50,9 +50,21 @@ def wait_for_framework(adb, seconds=180):
     raise TimeoutError(f"Android framework readiness deadline exceeded: {last}")
 
 
+def require_property(path, name, expected):
+    values = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == name:
+            values.append(value.strip())
+    if values != [expected]:
+        raise ValueError(f"{path}: expected exactly {name}={expected}, got {values}")
+    print(f"{path.name}: {name}={expected}", flush=True)
+
+
 def main():
     sdk = Path(os.environ["ANDROID_HOME"])
-    tools = sdk / "cmdline-tools" / "latest" / "bin"
+    bootstrap = sdk / "cmdline-tools" / "latest" / "bin"
+    tools = sdk / "cmdline-tools" / "23.0" / "bin"
     temporary = Path(os.environ["RUNNER_TEMP"])
     avd_home = temporary / "blinky-avd"
     avd_home.mkdir()
@@ -62,14 +74,26 @@ def main():
     completed = False
     log_path = temporary / "blinky-emulator.log"
     try:
+        print("Installing side-by-side Android command-line tools 23.0.", flush=True)
+        run([bootstrap / "sdkmanager", "--install", "cmdline-tools;23.0"], 90, capture=True)
+        properties = tools.parent / "source.properties"
+        require_property(properties, "Pkg.Revision", "23.0")
+        metadata_path = temporary / "blinky-avd-metadata.txt"
+        metadata_path.write_text(properties.read_text(encoding="utf-8"), encoding="utf-8")
         print("Installing the API37 Google APIs image and emulator.", flush=True)
         run([tools / "sdkmanager", "--install", "emulator", "platform-tools",
              "system-images;android-37.0;google_apis;x86_64"], 180, capture=True)
         run([tools / "avdmanager", "create", "avd", "--force", "--name", "blinky-ci",
              "--package", "system-images;android-37.0;google_apis;x86_64",
              "--device", "pixel_2"], 30, capture=True)
+        avd_metadata = avd_home / "blinky-ci.ini"
+        with metadata_path.open("a", encoding="utf-8") as metadata:
+            metadata.write("\nAVD target metadata:\n" + avd_metadata.read_text(encoding="utf-8"))
+        require_property(avd_metadata, "target", "android-37.0")
         with (avd_home / "blinky-ci.avd" / "config.ini").open("a", encoding="utf-8") as config:
             config.write("\nhw.cpu.ncore=4\nhw.ramSize=2048M\nhw.heapSize=512M\ndisk.dataPartition.size=4G\n")
+        with metadata_path.open("a", encoding="utf-8") as metadata:
+            metadata.write("\nAVD configuration:\n" + (avd_home / "blinky-ci.avd" / "config.ini").read_text(encoding="utf-8"))
         with log_path.open("w", encoding="utf-8") as log:
             emulator = subprocess.Popen(
                 [str(sdk / "emulator" / "emulator"), "-avd", "blinky-ci", "-port", "5554",
@@ -89,6 +113,10 @@ def main():
     finally:
         try:
             if not completed and emulator is not None:
+                with (temporary / "blinky-crash.txt").open("w", encoding="utf-8") as log:
+                    result = run([*adb, "logcat", "-b", "crash", "-d", "-t", "400"], 10, check=False, capture=True)
+                    log.write(result.stdout + result.stderr)
+                    print(f"Failure crash buffer captured (exit {result.returncode}).", flush=True)
                 with (temporary / "blinky-logcat.txt").open("w", encoding="utf-8") as log:
                     result = run([*adb, "logcat", "-d", "-t", "400"], 10, check=False, capture=True)
                     log.write(result.stdout + result.stderr)

@@ -123,6 +123,8 @@ jobs:
             app/build/reports/lint-results-debug.*
             ${{ runner.temp }}/blinky-emulator.log
             ${{ runner.temp }}/blinky-logcat.txt
+            ${{ runner.temp }}/blinky-crash.txt
+            ${{ runner.temp }}/blinky-avd-metadata.txt
           if-no-files-found: warn
           retention-days: 3
       - name: Record completed verification or proven irrelevance

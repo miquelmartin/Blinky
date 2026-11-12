@@ -18,6 +18,16 @@ class AndroidReadinessTests(unittest.TestCase):
             "package:/system/framework/framework-res.apk\n", provisioned,
         ]]
 
+    def prepare_tool_output(self, root, args, target="android-37.0"):
+        if "cmdline-tools;23.0" in args:
+            tools = root / "cmdline-tools" / "23.0"
+            tools.mkdir(parents=True)
+            (tools / "source.properties").write_text("Pkg.Revision=23.0\n", encoding="utf-8")
+        if Path(args[0]).name == "avdmanager":
+            home = root / "blinky-avd"
+            (home / "blinky-ci.avd").mkdir()
+            (home / "blinky-ci.ini").write_text(f"target={target}\n", encoding="utf-8")
+
     @patch("run_android_tests.time.sleep")
     @patch("run_android_tests.run")
     def test_boot_property_alone_is_not_readiness(self, execute, sleep):
@@ -78,8 +88,7 @@ class AndroidReadinessTests(unittest.TestCase):
             def command(args, seconds, **kwargs):
                 if "logcat" in args:
                     raise OSError("diagnostic failed")
-                if Path(args[0]).name == "sdkmanager":
-                    (root / "blinky-avd" / "blinky-ci.avd").mkdir()
+                self.prepare_tool_output(root, args)
                 return self.response("")
 
             execute.side_effect = command
@@ -98,8 +107,7 @@ class AndroidReadinessTests(unittest.TestCase):
             start.return_value.poll.return_value = None
 
             def command(args, seconds, **kwargs):
-                if Path(args[0]).name == "avdmanager":
-                    (root / "blinky-avd" / "blinky-ci.avd").mkdir()
+                self.prepare_tool_output(root, args)
                 return self.response("")
 
             execute.side_effect = command
@@ -107,10 +115,28 @@ class AndroidReadinessTests(unittest.TestCase):
                 main()
             commands = [call.args[0] for call in execute.call_args_list]
             self.assertEqual(root / "cmdline-tools" / "latest" / "bin" / "sdkmanager", commands[0][0])
-            self.assertEqual(root / "cmdline-tools" / "latest" / "bin" / "avdmanager", commands[1][0])
+            self.assertEqual(root / "cmdline-tools" / "23.0" / "bin" / "sdkmanager", commands[1][0])
+            self.assertEqual(root / "cmdline-tools" / "23.0" / "bin" / "avdmanager", commands[2][0])
             self.assertEqual(1, sum(":app:connectedDebugAndroidTest" in cmd for cmd in commands))
             self.assertIn("verify_test_inventory.py", str(commands[-1]))
             start.return_value.terminate.assert_called_once()
+
+    @patch("run_android_tests.subprocess.Popen")
+    @patch("run_android_tests.run")
+    def test_misparsed_dotted_avd_target_never_launches_emulator(self, execute, start):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def command(args, seconds, **kwargs):
+                self.prepare_tool_output(root, args, target="android-0")
+                return self.response("")
+
+            execute.side_effect = command
+            with patch.dict(os.environ, {"ANDROID_HOME": directory, "RUNNER_TEMP": directory}):
+                with self.assertRaisesRegex(ValueError, "target=android-37.0"):
+                    main()
+            start.assert_not_called()
+            self.assertIn("target=android-0", (root / "blinky-avd-metadata.txt").read_text())
 
 
 if __name__ == "__main__":

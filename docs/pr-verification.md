@@ -101,7 +101,18 @@ RAM is not an evidence-backed fix. The runner now uses supported `-gpu swiftshad
 instead of `swiftshader_indirect`, which
 [Android documents as deprecated since emulator 36.4.9](https://developer.android.com/studio/run/emulator-acceleration).
 The API37 image, device, CPU, RAM, heap, data partition and every pixel assertion
-are unchanged. The diagnostic took 4m13s under a seven-runner-minute ceiling,
+are unchanged. Changing the renderer alone did **not** resolve the failure.
+The [hosted runner tools defect](https://github.com/actions/runner-images/issues/14484)
+explains the same crash: old command-line tools silently generate
+`target=android-0` for dotted API37 packages, misconfiguring graphics capabilities.
+The runner installs official `cmdline-tools;23.0` side by side, validates its
+revision, and actually uses that version's absolute `sdkmanager`/`avdmanager`
+paths. It rejects any generated AVD target other than exactly `android-37.0`
+before launching the emulator; no target metadata is rewritten and no graphics
+feature is bypassed. Tool revision, AVD metadata and a separate bounded crash
+buffer are retained on failure. The system image/emulator versions and resource
+settings are not changed by this correction.
+The diagnostic took 4m13s under a seven-runner-minute ceiling,
 ran no builds/APK installs/tests, and is not required-check coverage. Its
 temporary manual workflow exists only on an isolated, unmerged diagnostic ref,
 not in this PR's final verification workflow.
