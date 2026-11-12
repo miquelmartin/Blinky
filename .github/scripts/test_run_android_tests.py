@@ -12,22 +12,22 @@ class AndroidReadinessTests(unittest.TestCase):
     def response(self, output, code=0):
         return Mock(stdout=output, stderr="", returncode=code)
 
-    def healthy(self):
+    def healthy(self, provisioned="1\n"):
         return [self.response(value) for value in [
-            "1\n", "stopped\n", "Service input: found\n", "keyevent KEYCODE\n",
-            "package:/system/framework/framework-res.apk\n", "1\n",
+            "1\n", "Service input: found\n", "keyevent KEYCODE\n",
+            "package:/system/framework/framework-res.apk\n", provisioned,
         ]]
 
     @patch("run_android_tests.time.sleep")
     @patch("run_android_tests.run")
     def test_boot_property_alone_is_not_readiness(self, execute, sleep):
         execute.side_effect = [
-            self.response("1\n"), self.response("stopped\n"),
+            self.response("1\n"),
             self.response("Service input: not found\n"),
             *self.healthy(), *self.healthy(),
         ]
         wait_for_framework(["adb"])
-        self.assertEqual(15, execute.call_count)
+        self.assertEqual(12, execute.call_count)
         self.assertEqual(2, sleep.call_count)
 
     @patch("run_android_tests.time.sleep")
@@ -37,7 +37,16 @@ class AndroidReadinessTests(unittest.TestCase):
             *self.healthy(), self.response("", 224), *self.healthy(), *self.healthy(),
         ]
         wait_for_framework(["adb"])
-        self.assertEqual(19, execute.call_count)
+        self.assertEqual(16, execute.call_count)
+
+    @patch("run_android_tests.time.sleep")
+    @patch("run_android_tests.run")
+    def test_ready_services_do_not_require_boot_animation_or_setup_wizard_state(self, execute, sleep):
+        for value in ("0\n", "null\n"):
+            with self.subTest(value=value):
+                execute.side_effect = [*self.healthy(value), *self.healthy(value)]
+                wait_for_framework(["adb"])
+        self.assertFalse(any("init.svc.bootanim" in call.args[0] for call in execute.call_args_list))
 
     @patch("run_android_tests.time.monotonic", side_effect=[0, 0, 0, 181])
     @patch("run_android_tests.time.sleep")

@@ -86,7 +86,7 @@ The pinned emulator action also has an
 [upstream framework-readiness race](https://github.com/ReactiveCircus/android-emulator-runner/issues/489):
 its first input command can fail after `sys.boot_completed=1` but before Android
 services are usable. The owned startup script instead requires two consecutive
-complete checks of boot completion, boot animation, input, package and settings
+complete checks of boot completion, input, package and settings
 services before unlocking and disabling animations. This is bounded startup
 polling, not a test retry. It uses the same SDK tools/image/hardware settings,
 terminates its emulator process in `finally`, and captures bounded logcat and

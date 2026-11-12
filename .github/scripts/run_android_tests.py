@@ -6,23 +6,27 @@ import time
 
 
 def run(command, seconds, *, check=True, capture=False):
-    return subprocess.run(
-        ["timeout", "--kill-after=10s", f"{seconds}s", *map(str, command)],
-        check=check,
-        capture_output=capture,
-        text=True,
-        timeout=seconds + 15,
-    )
+    try:
+        return subprocess.run(
+            ["timeout", "--kill-after=10s", f"{seconds}s", *map(str, command)],
+            check=check,
+            capture_output=capture,
+            text=True,
+            timeout=seconds + 15,
+        )
+    except subprocess.CalledProcessError as error:
+        if capture:
+            print(((error.stdout or "") + (error.stderr or ""))[-12000:], flush=True)
+        raise
 
 
 def wait_for_framework(adb, seconds=180):
     probes = [
         (["getprop", "sys.boot_completed"], lambda output: output.strip() == "1"),
-        (["getprop", "init.svc.bootanim"], lambda output: output.strip() == "stopped"),
         (["service", "check", "input"], lambda output: "found" in output and "not found" not in output),
         (["cmd", "input", "help"], lambda output: "keyevent" in output),
         (["cmd", "package", "path", "android"], lambda output: output.strip().startswith("package:")),
-        (["settings", "get", "global", "device_provisioned"], lambda output: output.strip() == "1"),
+        (["settings", "get", "global", "device_provisioned"], lambda output: output.strip() in {"0", "1", "null"}),
     ]
     deadline = time.monotonic() + seconds
     ready_samples = 0
@@ -60,10 +64,10 @@ def main():
     try:
         print("Installing the API37 Google APIs image and emulator.", flush=True)
         run([tools / "sdkmanager", "--install", "emulator", "platform-tools",
-             "system-images;android-37.0;google_apis;x86_64"], 180)
+             "system-images;android-37.0;google_apis;x86_64"], 180, capture=True)
         run([tools / "avdmanager", "create", "avd", "--force", "--name", "blinky-ci",
              "--package", "system-images;android-37.0;google_apis;x86_64",
-             "--device", "pixel_2"], 30)
+             "--device", "pixel_2"], 30, capture=True)
         with (avd_home / "blinky-ci.avd" / "config.ini").open("a", encoding="utf-8") as config:
             config.write("\nhw.cpu.ncore=4\nhw.ramSize=2048M\nhw.heapSize=512M\ndisk.dataPartition.size=4G\n")
         with log_path.open("w", encoding="utf-8") as log:
