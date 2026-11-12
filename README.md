@@ -11,8 +11,9 @@ Play services, and internet access are required. Sender: Python 3.10 or newer.
 ## Android build and Firebase configuration
 
 Install Android Studio or Android SDK command-line tools, SDK platform **36** and
-build tools **35.0.0**. Use JDK **17 or 21**. The Gradle wrapper pins Gradle 8.13;
-the project pins AGP 8.13.2, Kotlin 2.2.21, Google Services 4.5.0 and Firebase BoM 35.1.0.
+build tools **36.0.0**. Use JDK **17 or 21**. The Gradle wrapper pins Gradle 9.7.0;
+the project pins AGP 9.5.1 with built-in Kotlin support, Kotlin 2.4.21,
+Google Services 4.6.0 and Firebase BoM 35.2.0.
 
 Set `JAVA_HOME` to your JDK and `ANDROID_HOME` to your SDK, or create an ignored
 `local.properties` in the repository root with your SDK path:
@@ -22,7 +23,7 @@ sdk.dir=C\:\\Users\\YOUR_NAME\\AppData\\Local\\Android\\Sdk
 ```
 
 Download [Android Studio](https://developer.android.com/studio), then open **More
-Actions > SDK Manager** and install Android SDK Platform 36, Build-Tools 35.0.0 and
+Actions > SDK Manager** and install Android SDK Platform 36, Build-Tools 36.0.0 and
 Platform-Tools. Accept the SDK license prompts. The usual Windows SDK directory is
 `%LOCALAPPDATA%\Android\Sdk`.
 

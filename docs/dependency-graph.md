@@ -28,8 +28,11 @@ snapshot instead of retaining dependencies from a separate bootstrap submission.
 
 Inspect the [dependency graph](https://github.com/miquelmartin/Blinky/network/dependencies)
 after a successful run. Gradle snapshots should include Firebase Messaging and its
-resolved transitive dependencies, along with build and test dependencies. GitHub
-can take a few minutes to index a submission. This is separate from build/test
+resolved transitive dependencies, along with build and test dependencies. The
+submission labels `debugRuntimeClasspath` and `releaseRuntimeClasspath` dependencies
+as runtime and keeps build, lint and test dependencies in development scope; this
+classification does not remove tooling dependencies or suppress their alerts.
+GitHub can take a few minutes to index a submission. This is separate from build/test
 verification: a successful submission is not evidence that the app compiles,
 passes tests, receives notifications or has been released.
 
@@ -61,3 +64,58 @@ No CI credentials or release secrets are added for Dependabot.
 Update PRs do not merge themselves, so dependencies are only upgraded after a
 reviewed merge. After merging Gradle changes, manually refresh the Android
 dependency submission to keep the graph aligned with the new resolved versions.
+
+## Toolchain security upgrades
+
+The upgraded build uses AGP 9.5.1, Gradle 9.7.0, Kotlin 2.4.21 with AGP's
+built-in Kotlin integration, Google Services 4.6.0 and Firebase BoM 35.2.0
+(Messaging 26.0.2). The wrapper is regenerated and checksum-pinned. App identity,
+minimum/compile/target SDK, saved data, signing requirements and manual releases
+are unchanged. Instrumentation CI uses stable Android 17/API 37 only, not a
+compile/target SDK migration.
+
+[AGP's compatibility requirements](https://developer.android.com/build/releases/agp-9-5-0-release-notes)
+require Gradle 9.6.0 or newer, Build Tools 36.0.0 and JDK 17. Gradle stays at 9.7.0,
+not the newer 9.9.x, because it is the upper fully supported version in
+[Kotlin 2.4.21's table](https://kotlinlang.org/docs/gradle-configure-project.html).
+That table's fully tested AGP range ends at 9.3.1; Kotlin permits newer AGP with
+possible compatibility caveats, so 9.5.1 is locally verified rather than claimed
+to be inside that range.
+[AGP documents the explicit newer KGP classpath dependency](https://developer.android.com/build/releases/agp-9-0-0-release-notes#upgrade-to-a-higher-kgp-version);
+the incompatible external `kotlin-android` plugin is removed.
+
+Upstream AGP still requests vulnerable tooling libraries. Narrow Gradle
+constraints upgrade Guava, Bouncy Castle, jose4j, JDOM and Commons Lang without
+changing unrelated configurations or replacing incompatible major APIs. Lint
+resolves an isolated `androidLintTool` configuration, so it needs its own
+Guava/Bouncy Castle/Commons Lang constraints and compatible HttpClient 4.5.14.
+These are real resolved-version changes, not advisory dismissals or dependency
+exclusions. Recheck both the build classpath and isolated lint graph when
+removing a constraint after a future upstream fix.
+
+Python's google-auth floor is 2.62.1; the upper bound remains below 3. Version
+2.62.2 is published, but the available package index and public-wheel TLS
+failures prevented local validation of it. TLS checks were not disabled. Other
+compatible sender dependencies resolve through the existing requirements.
+GitHub Actions are pinned to verified immutable releases; already-current
+Gradle, emulator and Play-upload actions retain their pins.
+
+Local validation resolved and scanned 248 version-qualified Maven coordinates,
+12 installed Python packages and seven Actions against non-withdrawn
+GitHub-reviewed advisories, with no matches. This is not a guarantee against
+unknown vulnerabilities or proof that live default-branch alerts have closed.
+The prior 58 open alerts remain attributable to the old main snapshot until the
+upgrades receive approval, are merged and the manual graph refresh succeeds.
+
+Debug unit/build/lint and all nine API 37 native tests pass without Firebase or
+signing credentials. Unchanged main reproduces the duration-scale test race:
+the test waited for a callback it had already removed, rather than asynchronous
+animator cancellation. Tests now await actual native/lifecycle effects with the
+same bounded timeout. The visibility test uses deterministic callback timing and
+durable expression history instead of sampling a transient blink; a deliberate
+postponement mutation in an isolated baseline copy fails that assertion.
+No application behavior or meaningful cancellation/rendering assertion is
+removed. Hosted Linux/current-head validation is still required. Signed
+packaging, Firebase-configured plugin execution and actual message delivery
+require separate authorized validation; the release guard still rejects missing
+configuration.

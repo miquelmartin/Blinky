@@ -55,7 +55,7 @@ def verify(session, version_code):
 
 
 def apk_version(apk):
-    tool = Path(os.environ["ANDROID_HOME"]) / "build-tools" / "35.0.0" / "aapt2"
+    tool = Path(os.environ["ANDROID_HOME"]) / "build-tools" / "36.0.0" / "aapt2"
     badging = subprocess.run([str(tool), "dump", "badging", str(apk)], capture_output=True, text=True, check=True).stdout
     match = re.search(r"package: name='([^']+)' versionCode='([0-9]+)'", badging)
     if not match or match.group(1) != PACKAGE:

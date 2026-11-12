@@ -9,6 +9,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.os.ParcelFileDescriptor
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
@@ -55,17 +56,13 @@ class IndustrialHeaderTest {
     @Test
     @SdkSuppress(minSdkVersion = 29)
     fun backgroundingCancelsPendingAnimationAndResetsOpen() = withActivity { activity, brand ->
-        val deadline = System.currentTimeMillis() + 3_000
-        while (!brand.handler.hasCallbacks(callback(brand)) && System.currentTimeMillis() < deadline) Thread.sleep(50)
-        instrumentation.runOnMainSync {
-            assertTrue(
-                "Visible=${brand.isShown}, attached=${brand.isAttachedToWindow}, " +
-                    "active=${field("active").getBoolean(brand)}, animators=${ValueAnimator.areAnimatorsEnabled()}",
-                brand.handler.hasCallbacks(callback(brand))
-            )
+        awaitOnMain("The visible view must schedule an expression") {
+            brand.handler.hasCallbacks(callback(brand))
         }
         instrumentation.runOnMainSync { activity.moveTaskToBack(true) }
-        instrumentation.waitForIdleSync()
+        awaitOnMain("The activity must become hidden") {
+            !brand.isShown || brand.windowVisibility != View.VISIBLE
+        }
         instrumentation.runOnMainSync {
             assertFalse(brand.handler.hasCallbacks(callback(brand)))
             assertEquals(null, field("animator").get(brand))
@@ -77,17 +74,24 @@ class IndustrialHeaderTest {
     @Test
     @SdkSuppress(minSdkVersion = 29)
     fun repeatedVisibleCallbacksDoNotPostponeTheBlink() = withActivity { _, brand ->
-        val deadline = System.currentTimeMillis() + 13_500
+        instrumentation.runOnMainSync {
+            brand.restoreExpressionState(true, null)
+            brand.removeCallbacks(callback(brand))
+            field("scheduled").setBoolean(brand, false)
+            IndustrialBrandView::class.java.getDeclaredMethod("schedule", java.lang.Long.TYPE)
+                .apply { isAccessible = true }.invoke(brand, 1_000L)
+        }
+        val deadline = SystemClock.uptimeMillis() + 3_000
         repeat(12) {
             instrumentation.runOnMainSync { brand.onVisibilityAggregated(true) }
-            Thread.sleep(500)
+            SystemClock.sleep(100)
         }
-        var closed = false
-        while (!closed && System.currentTimeMillis() < deadline) {
-            instrumentation.runOnMainSync { closed = brand.expressionState.current != null }
-            Thread.sleep(30)
+        var started = false
+        while (!started && SystemClock.uptimeMillis() < deadline) {
+            instrumentation.runOnMainSync { started = brand.expressionState.previous != null }
+            SystemClock.sleep(30)
         }
-        assertTrue("The randomized blink never started", closed)
+        assertTrue("Visibility callbacks postponed the scheduled expression", started)
     }
 
     @Test
@@ -105,9 +109,9 @@ class IndustrialHeaderTest {
             assertEquals(1f, currentFrame(brand).leftClosure, 0.0001f)
         }
         shell("settings put global animator_duration_scale 0")
-        val deadline = System.currentTimeMillis() + 3_000
-        while (brand.handler.hasCallbacks(callback(brand)) && System.currentTimeMillis() < deadline) Thread.sleep(50)
-        instrumentation.waitForIdleSync()
+        awaitOnMain("The native duration-scale notification must cancel the paused animator") {
+            field("animator").get(brand) == null
+        }
         instrumentation.runOnMainSync {
             assertEquals(0f, Settings.Global.getFloat(brand.context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE), 0f)
             assertFalse(brand.handler.hasCallbacks(callback(brand)))
@@ -118,8 +122,9 @@ class IndustrialHeaderTest {
         }
 
         shell("settings put global animator_duration_scale 1")
-        val enabledDeadline = System.currentTimeMillis() + 3_000
-        while (!brand.handler.hasCallbacks(callback(brand)) && System.currentTimeMillis() < enabledDeadline) Thread.sleep(50)
+        awaitOnMain("Re-enabling animations must schedule another expression") {
+            brand.handler.hasCallbacks(callback(brand))
+        }
         instrumentation.runOnMainSync { assertTrue(brand.handler.hasCallbacks(callback(brand))) }
     }
 
@@ -258,6 +263,10 @@ class IndustrialHeaderTest {
         instrumentation.waitForIdleSync()
         val brand = findBrand(activity.window.decorView) ?: error("Industrial brand view missing")
         try {
+            awaitOnMain("The activity must be visible with native animations enabled") {
+                brand.isAttachedToWindow && brand.isShown && brand.windowVisibility == View.VISIBLE &&
+                    field("active").getBoolean(brand) && ValueAnimator.areAnimatorsEnabled()
+            }
             test(activity, brand)
         } finally {
             instrumentation.runOnMainSync { activity.finish() }
@@ -267,6 +276,17 @@ class IndustrialHeaderTest {
                 shell("settings put global animator_duration_scale $previous")
             }
         }
+    }
+
+    private fun awaitOnMain(message: String, condition: () -> Boolean) {
+        val deadline = SystemClock.uptimeMillis() + 3_000
+        do {
+            var satisfied = false
+            instrumentation.runOnMainSync { satisfied = condition() }
+            if (satisfied) return
+            SystemClock.sleep(30)
+        } while (SystemClock.uptimeMillis() < deadline)
+        instrumentation.runOnMainSync { assertTrue(message, condition()) }
     }
 
     private fun findBrand(view: View): IndustrialBrandView? {

@@ -44,8 +44,10 @@ into another workflow.
 All verification runs on **Ubuntu 24.04**. Python sender/release-configuration
 tests are portable; Linux also exercises the existing POSIX `0600` private-file
 assertion. Node policy tests use its built-in runner. Android verification runs
-debug unit tests, APK build, lint and all instrumentation tests on an API 35
-x86_64 emulator. No release signing, Firebase client configuration, Play
+debug unit tests, APK build, lint and all instrumentation tests on stable API 37
+(SDK package `android-37.0`, Google APIs x86_64). This is the only instrumentation
+runtime; compile/target SDK remains 36 and minimum SDK remains 26. No release
+signing, Firebase client configuration, Play
 credentials or protected environment is used.
 
 Android is omitted only when every changed path is known-independent: `README.md`,
