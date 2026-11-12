@@ -102,6 +102,11 @@ jobs:
         if: inputs.operation == 'internal'
         run: python3 -m pip install --disable-pip-version-check --quiet -r sender/requirements.txt
 
+      - name: Inspect live Play versions before upload
+        if: inputs.operation == 'internal'
+        timeout-minutes: 3
+        run: python3 .github/scripts/verify_internal_release.py --apk app/build/outputs/apk/release/app-release.apk --preflight
+
       - name: Publish the app bundle to Play internal testing
         if: inputs.operation == 'internal'
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5

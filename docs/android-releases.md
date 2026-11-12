@@ -178,6 +178,16 @@ including after a code was consumed by an upload even if publication later faile
 Update the user-visible `versionName` as appropriate. This is the same manual version
 ownership as Elsewhere; the action does not invent or reset version codes.
 
+Before upload, the protected internal workflow uses its existing dedicated Play
+credential to inspect live tracks (including draft releases), bundles and APKs in
+a fresh temporary edit. The candidate must exceed every observed version code;
+the edit is always deleted without committing track changes. No publishing key
+needs to be copied to a local computer. Pending edits and historical consumed
+codes may not be visible in that snapshot, so this is not proof a code is unused.
+Play's upload response remains authoritative: a duplicate or failed preflight
+stops the workflow, with no automatic increment or retry. Inspect the live result
+before choosing another version or repeating an interrupted upload.
+
 Land the desired source and version bump on `main`, then select Actions >
 **Android internal testing release** > Run workflow > **main**, or:
 
