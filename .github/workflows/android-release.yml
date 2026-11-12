@@ -74,7 +74,9 @@ jobs:
         env:
           APK_KEY_PASSWORD: ${{ secrets.APK_KEY_PASSWORD }}
           APK_KEY_ALIAS: ${{ secrets.APK_KEY_ALIAS }}
-        run: sh ./gradlew --no-daemon --console=plain :app:testReleaseUnitTest :app:assembleRelease :app:bundleRelease :app:lintRelease
+        run: |
+          sh ./gradlew --no-daemon --console=plain :app:testReleaseUnitTest :app:assembleRelease :app:bundleRelease :app:lintRelease
+          python3 .github/scripts/verify_test_inventory.py --source app/src/test --reports app/build/test-results/testReleaseUnitTest
 
       - name: Verify signatures and prepare checksums
         run: |
