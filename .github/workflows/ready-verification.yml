@@ -1,260 +1,55 @@
-name: Pull request verification
-
+name: Temporary scoped disk diagnostic
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, reopened, synchronize, ready_for_review, edited]
-
+  workflow_dispatch:
 permissions:
   contents: read
-  pull-requests: read
   actions: read
-
-concurrency:
-  group: ready-verification-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
-env:
-  PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-  PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-
 jobs:
-  plan:
-    name: Classify changes
+  storage:
+    name: Inspect setup-only temporary disk footprint
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    outputs:
-      android: ${{ steps.changes.outputs.android }}
+    timeout-minutes: 4
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         timeout-minutes: 1
         with:
           persist-credentials: false
-          fetch-depth: 0
-      - name: Require a current ready pull request
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78
         timeout-minutes: 1
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          script: |
-            const { assertCurrentPR } = require('./.github/scripts/ready-ci.cjs');
-            await assertCurrentPR({ github, context });
-      - name: Conservatively classify the complete merge diff
-        timeout-minutes: 1
-        id: changes
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: node .github/scripts/ready-ci.cjs classify
-
-  python:
-    name: Python and policy tests
-    needs: plan
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        timeout-minutes: 1
-        with:
-          persist-credentials: false
-      - name: Sender and release-configuration tests
-        timeout-minutes: 2
-        run: |
-          timeout --kill-after=10s 30s python3 -m unittest discover -s sender -p 'test_*.py' -v
-          timeout --kill-after=10s 30s python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
-          timeout --kill-after=10s 30s node --test .github/scripts/test-ready-ci.cjs
-
-  android_build:
-    name: Android build and JVM verification
-    needs: plan
-    runs-on: ubuntu-24.04
-    timeout-minutes: 7
-    outputs:
-      evidence: ${{ steps.evidence.outputs.result }}
-      artifact_id: ${{ steps.apks.outputs.artifact-id }}
-    steps:
-      - name: Require an explicit change-classification decision
-        timeout-minutes: 1
-        env:
-          ANDROID: ${{ needs.plan.outputs.android }}
-        run: |
-          case "$ANDROID" in
-            true|false) ;;
-            *) echo "::error::Missing or invalid Android decision"; exit 1 ;;
-          esac
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        timeout-minutes: 1
-        if: needs.plan.outputs.android == 'true'
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        timeout-minutes: 2
-        if: needs.plan.outputs.android == 'true'
         with:
           distribution: temurin
           java-version: '17'
-      - name: Build, lint and run Android unit tests without release credentials
-        timeout-minutes: 6
-        if: needs.plan.outputs.android == 'true'
-        env:
-          TEST_APK_DIR: ${{ runner.temp }}/blinky-apks
-        run: |
-          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          test -x "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
-          timeout --kill-after=15s 5m sh ./gradlew --daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
-          timeout --kill-after=10s 15s python3 .github/scripts/verify_test_inventory.py --source app/src/test --reports app/build/test-results/testDebugUnitTest
-          timeout --kill-after=10s 15s python3 .github/scripts/android_test_artifacts.py produce "$TEST_APK_DIR"
-      - name: Stop the job-local Gradle daemon
+      - name: Reuse the exact existing APK artifact for representative disk occupancy only
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
         timeout-minutes: 1
-        if: always() && needs.plan.outputs.android == 'true'
-        run: timeout --kill-after=10s 30s sh ./gradlew --stop --console=plain
-      - name: Transfer exact current-attempt test APKs
-        id: apks
-        timeout-minutes: 1
-        if: needs.plan.outputs.android == 'true'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: test-apks-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/blinky-apks
-          if-no-files-found: error
-          retention-days: 1
-      - name: Retain bounded build failure diagnostics
-        timeout-minutes: 1
-        if: failure() && needs.plan.outputs.android == 'true'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: android-build-failure
-          path: |
-            app/build/test-results/
-            app/build/reports/tests/
-            app/build/reports/lint-results-debug.*
-          if-no-files-found: warn
-          retention-days: 3
-      - name: Record built APKs or proven irrelevance
-        timeout-minutes: 1
-        id: evidence
-        env:
-          ANDROID: ${{ needs.plan.outputs.android }}
-          ARTIFACT_ID: ${{ steps.apks.outputs.artifact-id }}
-        run: |
-          case "$ANDROID" in
-            true) test -n "$ARTIFACT_ID"; echo 'result=built' >> "$GITHUB_OUTPUT" ;;
-            false) echo 'result=proven-unnecessary' >> "$GITHUB_OUTPUT" ;;
-            *) exit 1 ;;
-          esac
-
-  android:
-    name: Android verification
-    needs: [plan, android_build]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 8
-    outputs:
-      evidence: ${{ steps.evidence.outputs.result }}
-    steps:
-      - name: Require an explicit change-classification decision and completed build
-        timeout-minutes: 1
-        env:
-          ANDROID: ${{ needs.plan.outputs.android }}
-          BUILD_EVIDENCE: ${{ needs.android_build.outputs.evidence }}
-          ARTIFACT_ID: ${{ needs.android_build.outputs.artifact_id }}
-        run: |
-          case "$ANDROID/$BUILD_EVIDENCE" in
-            true/built) test -n "$ARTIFACT_ID" ;;
-            false/proven-unnecessary) ;;
-            *) echo "::error::Missing classification or build evidence"; exit 1 ;;
-          esac
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        timeout-minutes: 1
-        if: needs.plan.outputs.android == 'true'
-        with:
-          persist-credentials: false
-      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        timeout-minutes: 1
-        if: needs.plan.outputs.android == 'true'
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Download only this producer's immutable artifact
-        timeout-minutes: 1
-        if: needs.plan.outputs.android == 'true'
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
-        with:
-          artifact-ids: ${{ needs.android_build.outputs.artifact_id }}
+          artifact-ids: '13932470030'
+          run-id: '43192920440'
+          github-token: ${{ github.token }}
           path: ${{ runner.temp }}/blinky-apks
           merge-multiple: true
-      - name: Verify exact APK provenance before SDK setup
-        timeout-minutes: 1
-        if: needs.plan.outputs.android == 'true'
-        env:
-          TEST_APK_DIR: ${{ runner.temp }}/blinky-apks
-        run: timeout --kill-after=10s 15s python3 .github/scripts/android_test_artifacts.py verify "$TEST_APK_DIR"
-      - name: Enable the Android emulator's KVM access
-        timeout-minutes: 1
-        if: needs.plan.outputs.android == 'true'
+      - name: Verify reused APK identity and measure SDK setup without executing any app
+        timeout-minutes: 3
+        shell: bash
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-      - name: Run existing instrumentation tests on an emulator
-        timeout-minutes: 7
-        if: needs.plan.outputs.android == 'true'
-        env:
-          TEST_APK_DIR: ${{ runner.temp }}/blinky-apks
-        run: timeout --kill-after=15s 6m python3 .github/scripts/run_android_tests.py
-      - name: Retain bounded Android failure diagnostics
-        timeout-minutes: 1
-        if: failure() && needs.plan.outputs.android == 'true'
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: android-verification-failure
-          path: |
-            ${{ runner.temp }}/blinky-native-results/
-            ${{ runner.temp }}/blinky-instrumentation.txt
-            ${{ runner.temp }}/blinky-emulator.log
-            ${{ runner.temp }}/blinky-logcat.txt
-            ${{ runner.temp }}/blinky-crash.txt
-            ${{ runner.temp }}/blinky-avd-metadata.txt
-          if-no-files-found: warn
-          retention-days: 3
-      - name: Record completed verification or proven irrelevance
-        timeout-minutes: 1
-        id: evidence
-        env:
-          ANDROID: ${{ needs.plan.outputs.android }}
-        run: |
-          case "$ANDROID" in
-            true) echo 'result=verified' >> "$GITHUB_OUTPUT" ;;
-            false) echo 'result=proven-unnecessary' >> "$GITHUB_OUTPUT" ;;
-            *) exit 1 ;;
-          esac
-
-  gate:
-    name: Ready verification
-    if: always()
-    needs: [plan, python, android_build, android]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 2
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        timeout-minutes: 1
-        with:
-          persist-credentials: false
-      - name: Reject missing, unsuccessful or stale verification
-        timeout-minutes: 1
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        env:
-          VERIFICATION_NEEDS: ${{ toJSON(needs) }}
-        with:
-          script: |
-            const { assertResults, assertCurrentPR } = require('./.github/scripts/ready-ci.cjs');
-            assertResults(JSON.parse(process.env.VERIFICATION_NEEDS));
-            await assertCurrentPR({ github, context });
-      - name: Reject cancellation even after dependencies have succeeded
-        timeout-minutes: 1
-        if: always() && cancelled()
-        run: exit 1
-      - name: Require a successful gate
-        timeout-minutes: 1
-        if: always()
-        env:
-          PRIOR_STATUS: ${{ job.status }}
-        run: |
-          test "$PRIOR_STATUS" = success
+          set -euo pipefail
+          timeout --kill-after=2s 10s python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "blinky-apks"
+          manifest = json.loads((root / "manifest.json").read_text())
+          assert manifest["run_id"] == "43192920440" and manifest["attempt"] == "1"
+          assert manifest["head_sha"] == "69ebba8639f1b61a786ac42b7503dd032a86d662"
+          assert manifest["base_sha"] == "c3480f09de363905441887bf654a4890f741a284"
+          assert manifest["merge_sha"] == "a6a802dd7b16c10f711d8bccf538ea020271f359"
+          assert len(manifest["native_tests"]) == 9
+          assert set(manifest["apks"]) == {"app-debug.apk", "app-debug-androidTest.apk"}
+          for name, checksum in manifest["apks"].items():
+              path = root / name
+              assert hashlib.sha256(path.read_bytes()).hexdigest() == checksum
+              print(f"Existing APK occupancy only: {name} bytes={path.stat().st_size}")
+          print("Diagnostic reuse of original verified build only; not current-run test completion.")
+          PY
+          timeout --kill-after=3s 175s python3 .github/scripts/disk-diagnostic.py
