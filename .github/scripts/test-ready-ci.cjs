@@ -20,6 +20,9 @@ function results(android = 'true') {
   return {
     plan: { result: 'success', outputs: { android } },
     python: { result: 'success' },
+    android_build: { result: 'success', outputs: {
+      evidence: android === 'true' ? 'built' : 'proven-unnecessary', artifact_id: '123'
+    } },
     android: { result: 'success', outputs: {
       evidence: android === 'true' ? 'verified' : 'proven-unnecessary'
     } }
@@ -29,7 +32,7 @@ function results(android = 'true') {
 test('aggregate rejects missing, skipped, failed or cancelled dependencies', () => {
   assertResults(results());
   assertResults(results('false'));
-  for (const name of ['plan', 'python', 'android']) {
+  for (const name of ['plan', 'python', 'android_build', 'android']) {
     for (const result of ['skipped', 'failure', 'cancelled', undefined]) {
       const needs = results();
       needs[name].result = result;
@@ -42,6 +45,16 @@ test('aggregate rejects missing, skipped, failed or cancelled dependencies', () 
 });
 
 test('aggregate requires proof matching the Android decision', () => {
+  for (const evidence of [undefined, 'verified', 'proven-unnecessary']) {
+    const needs = results();
+    needs.android_build.outputs.evidence = evidence;
+    assert.throws(() => assertResults(needs));
+  }
+  for (const artifact_id of [undefined, '', '0', 'latest', '123,456']) {
+    const needs = results();
+    needs.android_build.outputs.artifact_id = artifact_id;
+    assert.throws(() => assertResults(needs));
+  }
   for (const decision of ['', 'FALSE', undefined]) {
     const needs = results();
     needs.plan.outputs.android = decision;

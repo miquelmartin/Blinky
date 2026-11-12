@@ -24,7 +24,7 @@ GitHub Actions app (ID **15368**). Keeping this existing name preserves protecti
 during rollout; it no longer means a draft-to-ready lifecycle.
 
 The aggregate always executes and requires successful classification, Python/
-policy tests and Android verification or explicit evidence that Android is
+policy tests, Android build and Android native verification or explicit evidence that Android is
 unnecessary. Missing, failed, skipped or cancelled dependencies fail closed.
 At both the start and the gate, read-only API checks reject a closed/draft PR,
 changed head/source, changed base, changed or unavailable merge candidate,
@@ -49,9 +49,170 @@ debug unit tests, APK build, lint and all instrumentation tests on stable API 37
 runtime; compile/target SDK remains 36 and minimum SDK remains 26. No release
 signing, Firebase client configuration, Play
 credentials or protected environment is used.
-The emulator uses an explicit Pixel 2 profile, four cores, 2 GiB RAM and a
-512 MiB heap instead of the legacy no-profile AVD's 64 MiB heap. Boot timeout or
-failed native tests still fail the required gate.
+The emulator uses an explicit Pixel 2 profile with four guest cores. API37's
+effective minimums are 4 GiB RAM, a 576 MiB heap and 6 GiB userdata, not the
+previously requested 2 GiB/512 MiB/4 GiB. Resource properties are written exactly
+once in the job-owned AVD configuration, using integer MiB for `hw.ramSize` and
+`vm.heapSize`; the old `hw.heapSize` key is not recognized. Generated API target
+and image fields are preserved. After boot, the runner retains `hardware-qemu.ini`
+and rejects CPU/RAM/heap values that differ from the approved configuration.
+These effective settings still require hosted verification. Boot timeout or failed
+native tests still fail the required gate.
+
+## Runtime and completion evidence
+
+The Android build job runs JVM tests, build, lint and instrumentation APK assembly
+in one Gradle invocation, then stops its job-local daemon in bounded, always-run
+cleanup. A separate fresh native job downloads only those two debug APKs and
+their provenance manifest, not Gradle caches or build intermediates. It does not
+invoke Gradle or compile anything. This isolates build storage from emulator
+storage without deleting shared SDK files. No cross-PR cache, retries, release
+configuration or signing input is introduced.
+
+The APK transfer uses the producer's immutable artifact ID, with a run/attempt
+specific artifact name and one-day retention. Before SDK setup and again before
+execution, the consumer verifies both APK SHA256 values, the exact file set,
+current merge checkout, PR head/base, workflow run/attempt and native source
+inventory. It rejects missing, empty, changed or stale APKs. APK manifest
+inspection also checks the app/test package, target and AndroidJUnitRunner.
+The runtime installs the exact pair and invokes the same AndroidJUnitRunner
+unfiltered once through `adb shell am instrument -w -r`; no test selection,
+orchestrator, retry or assertion change is introduced.
+
+The result adapter requires each expected test to start and finish successfully
+exactly once, matching discovered totals and sequential test numbers. Failures,
+errors, ignored tests, failed assumptions, crashes, malformed/truncated protocol,
+unexpected/duplicate tests and missing terminal success all fail closed. Only
+then does it write JUnit XML for the independent source/report validator.
+Bounded raw runner output, crash buffers and effective device metadata remain
+available on failure. Android build and native evidence are separately required
+by the unchanged aggregate; absent artifacts or an unexpectedly skipped native
+job cannot pass.
+
+All 13 expressions still render at all 21 sampled frames with the same pixel,
+wordmark and state assertions. The test no longer encodes and writes 273 PNGs
+to emulator storage: no repository command or CI artifact consumed those files.
+Assertion failures retain expression/frame/pixel coordinates. Build/JVM/lint
+reports and native raw results/XML/crash diagnostics remain failure-only
+(three-day retention, one-minute upload limit). Successful builds transfer only
+the APK pair and provenance needed by the native job, not diagnostic artifacts.
+
+Both Android suites must produce XML reports matching every `@Test` method in
+their respective source trees exactly once. Missing, empty, malformed, partial,
+duplicate, unexpected, failed or skipped results fail verification even when
+Gradle exits zero. Unsupported source test declarations fail closed and require
+an explicit inventory-parser update, not an exemption.
+
+This catches a real false-green baseline:
+[run 43128841819](https://github.com/miquelmartin/Blinky/actions/runs/43128841819)
+spent 7m24s in Android (2m46s build/lint/unit, 4m32s emulator/native), but its APK
+installer reported `Requested internal only, but not enough space` before Gradle
+printed `BUILD SUCCESSFUL`. That is **not** a complete-native-coverage timing
+baseline. A subsequent attempt requested a 4 GiB data partition, but the
+correctly targeted API37 emulator enforces a larger first-boot minimum.
+
+The pinned emulator action also has an
+[upstream framework-readiness race](https://github.com/ReactiveCircus/android-emulator-runner/issues/489):
+its first input command can fail after `sys.boot_completed=1` but before Android
+services are usable. The owned startup script instead requires two consecutive
+complete checks of boot completion, input, package and settings
+services before unlocking and disabling animations. This is bounded startup
+polling, not a test retry. It preserves the API37 image and Pixel 2 profile,
+terminates its emulator process in `finally`, and captures bounded logcat and
+emulator diagnostics on failure. No unmerged third-party action fork is executed.
+
+The [startup-only diagnostic](https://github.com/miquelmartin/Blinky/actions/runs/43134816880)
+then reproduced repeated SurfaceFlinger `SIGABRT` crashes in
+`GoldfishMapper::readFromHost` (`hasReadColorBufferDma` assertion), followed by
+framework restarts while the emulator process remained alive. Guest available
+memory stayed above 849 MiB and host available memory above 4.3 GiB; increasing
+RAM is not an evidence-backed fix. The runner now uses supported `-gpu swiftshader`
+instead of `swiftshader_indirect`, which
+[Android documents as deprecated since emulator 36.4.9](https://developer.android.com/studio/run/emulator-acceleration).
+That renderer correction did not change requested hardware or any pixel
+assertion. Changing the renderer alone did **not** resolve the failure.
+The [hosted runner tools defect](https://github.com/actions/runner-images/issues/14484)
+explains the same crash: old command-line tools silently generate
+`target=android-0` for dotted API37 packages, misconfiguring graphics capabilities.
+The runner installs official `cmdline-tools;23.0` side by side, validates its
+revision, and actually uses that version's absolute `sdkmanager`/`avdmanager`
+paths. It rejects any generated AVD target other than exactly `android-37.0`
+before launching the emulator; no target metadata is rewritten and no graphics
+feature is bypassed. Tool revision, AVD metadata and a separate bounded crash
+buffer are retained on failure. The tooling correction did not change the
+system image/emulator versions or requested resource settings.
+The diagnostic took 4m13s under a seven-runner-minute ceiling,
+ran no builds/APK installs/tests, and is not required-check coverage. Its
+temporary manual workflow exists only on an isolated, unmerged diagnostic ref,
+not in this PR's final verification workflow.
+
+The [tools23 verification](https://github.com/miquelmartin/Blinky/actions/runs/43136962285)
+confirmed revision 23.0 and generated `target=android-37.0`, but never booted:
+the emulator reported only 5830.48 MiB host space available against 7372.80 MiB
+required. All 19 JVM tests passed; native execution never started, so neither
+native coverage nor graphics stability was established. The
+[official first-boot implementation](https://android.googlesource.com/platform/external/qemu/+/9f0811e72acfc46edc39d3d0baedd796f7d03309/android-qemu2-glue/main.cpp#2382)
+enforces at least 6 GiB userdata for API24+ and requires 1.2 times that capacity
+free on the containing filesystem. A smaller requested partition or
+`-partition-size` is not a supported way around that floor.
+The runner now checks for at least 8 GiB free after SDK installation and fails
+immediately if its emulator exits during readiness checks. It does not remove
+host SDK packages other than the verified unused .NET installation described
+below, and does not guess another storage location.
+
+The [single setup-only preflight](https://github.com/miquelmartin/Blinky/actions/runs/43200191825)
+verified that removing only `/usr/share/dotnet` on a disposable Ubuntu 24.04
+native runner reclaimed 6,167,756,800 bytes. The exact path was a root-owned
+directory on the same filesystem as `RUNNER_TEMP` and `ANDROID_HOME`, with no
+symlink or nested mount. The unchanged side-by-side tools23, emulator37.2.13,
+platform-tools37.0.1 and API37 image revision7 setup then left
+13,238,075,392 bytes free (12.33 GiB), above the 8 GiB runtime guard plus a
+16 MiB reserve. No APK, AVD, emulator or test ran in this preflight.
+
+Each fresh hosted native job now repeats only that guarded deletion before SDK
+setup. It refuses unexpected runner identity, target path/type/owner/mount or
+filesystem placement, and requires at least the measured SDK setup footprint
+plus 1 GiB headroom beyond the final storage guard before continuing. The
+existing post-setup 8 GiB check remains authoritative. This affects only the
+disposable runner's unused .NET SDK files; it changes no application
+dependencies, shared SDK, runner image or local machine, and cannot persist
+between jobs. CPU memory, image/API/emulator versions, test assertions and all
+inventory/provenance checks are unchanged.
+
+The [official API37 RAM and heap logic](https://android.googlesource.com/platform/external/qemu/+/6ba955e9dfe60e2ce28e7fe3e9b68479fdbb9812/android/android-emu/android/main-common.c#1254)
+raises RAM to 4096 MiB and the heap minimum to 576 MiB; no low-memory bypass is
+used. The observed binary independently logged the RAM increase. The warning
+about "currently using 2" CPU cores concerns the **host** compatibility check,
+not measured guest CPUs; guest resources must instead be checked in effective
+emulator metadata.
+
+The approved [one-minute read-only storage probe](https://github.com/miquelmartin/Blinky/actions/runs/43189971904)
+was initially rejected before any runner or step started: GitHub reported failed account
+payments or a spending-limit restriction. It measured no volume capacity or
+permissions. Its separately approved
+[second attempt](https://github.com/miquelmartin/Blinky/actions/runs/43189971904/attempts/2)
+executed for approximately three seconds: `RUNNER_TEMP` and `/mnt` shared the
+same root filesystem with 14,142,455,808 bytes available before setup. `/mnt`
+was not writable by the runner, so relocation there supplies neither capacity
+nor safe unprivileged placement. This does not establish post-setup capacity;
+the fresh native job still checks for at least 8 GiB after SDK setup and APK
+transfer. No billing change, host cleanup or shared SDK deletion was made.
+The temporary manual probe workflow is not part of this PR.
+
+Verification job ceilings are 2 + 3 + 7 (build) + 8 (native) + 2 = **22 aggregate runner-minutes per
+attempt**, down from 55. This is not measured savings, parallel wall time or a
+billing cap; reruns and multiple PRs multiply usage. Separating jobs adds fresh
+checkout/Java setup and APK upload/download overhead, each transfer capped at
+one minute within the job ceilings; it is not a measured runtime improvement.
+Complete coverage must fit or the run fails. Build/lint/unit/test-APK assembly
+has a five-minute process deadline (six-minute step); native execution has three
+minutes after emulator setup, each APK install 30 seconds, framework readiness
+three minutes, SDK installation three minutes, and the complete native process
+six minutes (seven-minute step). Process deadlines use a finite kill
+grace, daemon cleanup has 30 seconds, and all remaining steps also have finite
+limits. A timeout is failure, never proof that remaining tests were unnecessary.
+The source/report validator and retained failure reports are the completion
+evidence; a zero exit code alone is insufficient.
 
 Android is omitted only when every changed path is known-independent: `README.md`,
 Markdown under `docs/` or `.github/skills/`, or files under `sender/`. The complete

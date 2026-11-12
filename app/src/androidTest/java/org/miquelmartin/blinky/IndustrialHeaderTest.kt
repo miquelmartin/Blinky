@@ -18,7 +18,6 @@ import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -73,7 +72,7 @@ class IndustrialHeaderTest {
 
     @Test
     @SdkSuppress(minSdkVersion = 29)
-    fun repeatedVisibleCallbacksDoNotPostponeTheBlink() = withActivity { _, brand ->
+    fun repeatedVisibleCallbacksDoNotPostponeTheBlink() = withActivity { activity, brand ->
         instrumentation.runOnMainSync {
             brand.restoreExpressionState(true, null)
             brand.removeCallbacks(callback(brand))
@@ -91,7 +90,22 @@ class IndustrialHeaderTest {
             instrumentation.runOnMainSync { started = brand.expressionState.previous != null }
             SystemClock.sleep(30)
         }
-        assertTrue("Visibility callbacks postponed the scheduled expression", started)
+        instrumentation.runOnMainSync {
+            started = started || brand.expressionState.previous != null
+            assertTrue(
+                "Visibility callbacks postponed the scheduled expression " +
+                    "(elapsed=${SystemClock.uptimeMillis() - (deadline - 3_000)}ms, " +
+                    "queued=${brand.handler.hasCallbacks(callback(brand))}, " +
+                    "scheduled=${field("scheduled").getBoolean(brand)}, " +
+                    "attached=${brand.isAttachedToWindow}, shown=${brand.isShown}, " +
+                    "windowVisibility=${brand.windowVisibility}, windowFocus=${activity.hasWindowFocus()}, " +
+                    "active=${field("active").getBoolean(brand)}, " +
+                    "animatorScale=${Settings.Global.getFloat(brand.context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, -1f)}, " +
+                    "animatorsEnabled=${ValueAnimator.areAnimatorsEnabled()}, " +
+                    "previous=${brand.expressionState.previous}, current=${brand.expressionState.current})",
+                started
+            )
+        }
     }
 
     @Test
@@ -132,8 +146,6 @@ class IndustrialHeaderTest {
         instrumentation.runOnMainSync {
             brand.setActive(false)
             brand.layout(0, 0, 400, 208)
-            val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "expressions")
-            check(directory.mkdirs() || directory.isDirectory)
             for (expression in GhostExpression.entries) {
                 brand.restoreExpressionState(true, null)
                 animate(brand, expression)
@@ -143,11 +155,8 @@ class IndustrialHeaderTest {
                     animator.currentPlayTime = animator.duration * step / 20
                     val image = Bitmap.createBitmap(400, 208, Bitmap.Config.ARGB_8888)
                     brand.draw(Canvas(image))
-                    File(directory, "${expression.name}-$step.png").outputStream().use {
-                        image.compress(Bitmap.CompressFormat.PNG, 100, it)
-                    }
                     for (x in 0..130) for (y in 159 until 208) {
-                        assertEquals("Expression overlaps history", 0, Color.alpha(image.getPixel(x, y)))
+                        assertEquals("${expression.name} frame $step overlaps history at ($x,$y)", 0, Color.alpha(image.getPixel(x, y)))
                     }
                     if (!expression.togglesWordmark) assertEquals(1f, currentFrame(brand).wordmarkAmount, 0f)
                     image.recycle()
@@ -263,7 +272,16 @@ class IndustrialHeaderTest {
         instrumentation.waitForIdleSync()
         val brand = findBrand(activity.window.decorView) ?: error("Industrial brand view missing")
         try {
-            awaitOnMain("The activity must be visible with native animations enabled") {
+            awaitOnMain(
+                "The activity must be visible with native animations enabled",
+                diagnostic = {
+                    "attached=${brand.isAttachedToWindow}, shown=${brand.isShown}, " +
+                        "windowVisibility=${brand.windowVisibility}, windowFocus=${activity.hasWindowFocus()}, " +
+                        "active=${field("active").getBoolean(brand)}, " +
+                        "animatorScale=${Settings.Global.getFloat(brand.context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, -1f)}, " +
+                        "animatorsEnabled=${ValueAnimator.areAnimatorsEnabled()}"
+                }
+            ) {
                 brand.isAttachedToWindow && brand.isShown && brand.windowVisibility == View.VISIBLE &&
                     field("active").getBoolean(brand) && ValueAnimator.areAnimatorsEnabled()
             }
@@ -278,7 +296,7 @@ class IndustrialHeaderTest {
         }
     }
 
-    private fun awaitOnMain(message: String, condition: () -> Boolean) {
+    private fun awaitOnMain(message: String, diagnostic: (() -> String)? = null, condition: () -> Boolean) {
         val deadline = SystemClock.uptimeMillis() + 3_000
         do {
             var satisfied = false
@@ -286,7 +304,10 @@ class IndustrialHeaderTest {
             if (satisfied) return
             SystemClock.sleep(30)
         } while (SystemClock.uptimeMillis() < deadline)
-        instrumentation.runOnMainSync { assertTrue(message, condition()) }
+        instrumentation.runOnMainSync {
+            val details = diagnostic?.invoke()?.let { " ($it)" } ?: ""
+            assertTrue("$message$details", condition())
+        }
     }
 
     private fun findBrand(view: View): IndustrialBrandView? {

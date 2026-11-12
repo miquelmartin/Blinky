@@ -13,11 +13,18 @@ function androidNeeded(paths) {
 }
 
 function assertResults(needs) {
-  for (const name of ['plan', 'python', 'android']) {
+  for (const name of ['plan', 'python', 'android_build', 'android']) {
     assert.equal(needs[name]?.result, 'success', `${name} must actually succeed`);
   }
   const decision = needs.plan.outputs?.android;
   assert.ok(['true', 'false'].includes(decision), 'Missing Android classification');
+  assert.equal(needs.android_build.outputs?.evidence,
+    decision === 'true' ? 'built' : 'proven-unnecessary',
+    'Android build must finish or explicitly prove it is unnecessary');
+  if (decision === 'true') {
+    assert.match(needs.android_build.outputs?.artifact_id ?? '', /^[1-9][0-9]*$/,
+      'Android build must identify its immutable APK artifact');
+  }
   assert.equal(needs.android.outputs?.evidence,
     decision === 'true' ? 'verified' : 'proven-unnecessary',
     'Android verification must finish or explicitly prove it is unnecessary');
