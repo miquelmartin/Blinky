@@ -73,7 +73,7 @@ def main():
         with log_path.open("w", encoding="utf-8") as log:
             emulator = subprocess.Popen(
                 [str(sdk / "emulator" / "emulator"), "-avd", "blinky-ci", "-port", "5554",
-                 "-no-window", "-gpu", "swiftshader_indirect", "-no-snapshot", "-noaudio", "-no-boot-anim"],
+                 "-no-window", "-gpu", "swiftshader", "-no-snapshot", "-noaudio", "-no-boot-anim"],
                 stdout=log, stderr=subprocess.STDOUT,
             )
         wait_for_framework(adb)

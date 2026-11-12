@@ -92,6 +92,20 @@ polling, not a test retry. It uses the same SDK tools/image/hardware settings,
 terminates its emulator process in `finally`, and captures bounded logcat and
 emulator diagnostics on failure. No unmerged third-party action fork is executed.
 
+The [startup-only diagnostic](https://github.com/miquelmartin/Blinky/actions/runs/43134816880)
+then reproduced repeated SurfaceFlinger `SIGABRT` crashes in
+`GoldfishMapper::readFromHost` (`hasReadColorBufferDma` assertion), followed by
+framework restarts while the emulator process remained alive. Guest available
+memory stayed above 849 MiB and host available memory above 4.3 GiB; increasing
+RAM is not an evidence-backed fix. The runner now uses supported `-gpu swiftshader`
+instead of `swiftshader_indirect`, which
+[Android documents as deprecated since emulator 36.4.9](https://developer.android.com/studio/run/emulator-acceleration).
+The API37 image, device, CPU, RAM, heap, data partition and every pixel assertion
+are unchanged. The diagnostic took 4m13s under a seven-runner-minute ceiling,
+ran no builds/APK installs/tests, and is not required-check coverage. Its
+temporary manual workflow exists only on an isolated, unmerged diagnostic ref,
+not in this PR's final verification workflow.
+
 Verification job ceilings are 2 + 3 + 15 + 2 = **22 aggregate runner-minutes per
 attempt**, down from 55. This is not measured savings, parallel wall time or a
 billing cap; reruns and multiple PRs multiply usage. The Android limit includes
