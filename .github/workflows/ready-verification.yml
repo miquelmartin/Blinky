@@ -1,12 +1,14 @@
-name: Temporary scoped disk diagnostic
+name: Temporary hosted disk preflight
+
 on:
   workflow_dispatch:
+
 permissions:
   contents: read
-  actions: read
+
 jobs:
   storage:
-    name: Inspect setup-only temporary disk footprint
+    name: Measure exact hosted SDK cleanup
     runs-on: ubuntu-24.04
     timeout-minutes: 4
     steps:
@@ -19,37 +21,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Reuse the exact existing APK artifact for representative disk occupancy only
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
-        timeout-minutes: 1
-        with:
-          artifact-ids: '13932470030'
-          run-id: '43192920440'
-          github-token: ${{ github.token }}
-          path: ${{ runner.temp }}/blinky-apks
-          merge-multiple: true
-      - name: Verify reused APK identity and measure SDK setup without executing any app
+      - name: Remove only unused preinstalled .NET SDKs and measure API 37 setup
         timeout-minutes: 3
-        shell: bash
-        run: |
-          set -euo pipefail
-          timeout --kill-after=2s 10s python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-          root = Path(os.environ["RUNNER_TEMP"]) / "blinky-apks"
-          manifest = json.loads((root / "manifest.json").read_text())
-          assert manifest["run_id"] == "43192920440" and manifest["attempt"] == "1"
-          assert manifest["head_sha"] == "69ebba8639f1b61a786ac42b7503dd032a86d662"
-          assert manifest["base_sha"] == "c3480f09de363905441887bf654a4890f741a284"
-          assert manifest["merge_sha"] == "a6a802dd7b16c10f711d8bccf538ea020271f359"
-          assert len(manifest["native_tests"]) == 9
-          assert set(manifest["apks"]) == {"app-debug.apk", "app-debug-androidTest.apk"}
-          for name, checksum in manifest["apks"].items():
-              path = root / name
-              assert hashlib.sha256(path.read_bytes()).hexdigest() == checksum
-              print(f"Existing APK occupancy only: {name} bytes={path.stat().st_size}")
-          print("Diagnostic reuse of original verified build only; not current-run test completion.")
-          PY
-          timeout --kill-after=3s 175s python3 .github/scripts/disk-diagnostic.py
+        run: timeout --kill-after=3s 180s python3 .github/scripts/hosted_disk_preflight.py
