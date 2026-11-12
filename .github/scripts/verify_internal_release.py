@@ -1,6 +1,7 @@
-"""Confirm the uploaded version is completed on the committed Play internal track."""
+"""Inspect live Play versions before upload or confirm committed internal availability."""
 
 import argparse
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import re
@@ -23,16 +24,64 @@ def request(session, method, url, **kwargs):
     return data
 
 
-def verify(session, version_code):
-    if version_code < 1:
-        raise ValueError("Release version code must be positive.")
+@contextmanager
+def temporary_edit(session):
     edit = request(session, "POST", BASE, json={})
     edit_id = edit.get("id")
     if not isinstance(edit_id, str) or not re.fullmatch(r"[0-9]+", edit_id):
         raise ValueError("Play verification did not return a valid edit ID.")
     url = f"{BASE}/{edit_id}"
-    # A fresh edit reads committed track state; it is deleted without a commit.
+    # Read a fresh snapshot; never commit track or release changes from inspection.
     try:
+        yield url
+    finally:
+        request(session, "DELETE", url)
+
+
+def preflight(session, version_code):
+    if version_code < 1:
+        raise ValueError("Release version code must be positive.")
+    observed = []
+    with temporary_edit(session) as url:
+        tracks = request(session, "GET", url + "/tracks").get("tracks", [])
+        if not isinstance(tracks, list):
+            raise ValueError("Play preflight returned invalid tracks.")
+        for track in tracks:
+            if not isinstance(track, dict) or not isinstance(track.get("track"), str):
+                raise ValueError("Play preflight returned an invalid track.")
+            releases = track.get("releases", [])
+            if not isinstance(releases, list):
+                raise ValueError("Play preflight returned invalid releases.")
+            for release in releases:
+                if not isinstance(release, dict):
+                    raise ValueError("Play preflight returned an invalid release.")
+                codes = release.get("versionCodes", [])
+                if not isinstance(codes, list) or not all(
+                    isinstance(code, str) and re.fullmatch(r"[1-9][0-9]*", code) for code in codes
+                ):
+                    raise ValueError("Play preflight returned invalid track version codes.")
+                observed.extend(int(code) for code in codes)
+        for collection in ("bundles", "apks"):
+            artifacts = request(session, "GET", url + "/" + collection).get(collection, [])
+            if not isinstance(artifacts, list):
+                raise ValueError("Play preflight returned invalid artifacts.")
+            for artifact in artifacts:
+                if not isinstance(artifact, dict):
+                    raise ValueError("Play preflight returned an invalid artifact.")
+                code = artifact.get("versionCode")
+                if type(code) is not int or code < 1:
+                    raise ValueError("Play preflight returned an invalid artifact version code.")
+                observed.append(code)
+        highest = max(observed, default=0)
+        if version_code <= highest:
+            raise ValueError("Candidate version must exceed every version observed in Play.")
+    return highest
+
+
+def verify(session, version_code):
+    if version_code < 1:
+        raise ValueError("Release version code must be positive.")
+    with temporary_edit(session) as url:
         track = request(session, "GET", url + "/tracks/internal")
         if track.get("track") != "internal":
             raise ValueError("Play verification returned a different track.")
@@ -50,8 +99,6 @@ def verify(session, version_code):
                 completed = True
         if not completed:
             raise ValueError(f"Version code {version_code} is not completed on the internal track.")
-    finally:
-        request(session, "DELETE", url)
 
 
 def apk_version(apk):
@@ -66,6 +113,7 @@ def apk_version(apk):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apk", type=Path, required=True)
+    parser.add_argument("--preflight", action="store_true", help="Inspect live tracks, bundles and APKs before upload; never commit an edit.")
     args = parser.parse_args()
     from google.auth.exceptions import GoogleAuthError
     from google.auth.transport.requests import AuthorizedSession
@@ -79,11 +127,19 @@ def main():
             scopes=["https://www.googleapis.com/auth/androidpublisher"],
         )
         with AuthorizedSession(credentials) as session:
-            verify(session, version)
+            if args.preflight:
+                highest = preflight(session, version)
+            else:
+                verify(session, version)
     except (OSError, KeyError, ValueError, GoogleAuthError, RequestException, subprocess.CalledProcessError) as error:
-        print(f"Play internal-track verification failed ({type(error).__name__}); no availability confirmed.", file=sys.stderr)
+        operation = "preflight" if args.preflight else "internal-track verification"
+        print(f"Play {operation} failed ({type(error).__name__}); no availability confirmed. Do not retry an upload or increment automatically.", file=sys.stderr)
         return 1
-    print(f"Verified committed Play internal track: versionCode {version}, status completed. Device propagation can take time.")
+    if args.preflight:
+        print(f"Play preflight: candidate {version} exceeds highest observed version {highest}; inspection edit deleted without commit.")
+        print("Pending edits and historical consumed codes may not appear in this snapshot. Upload remains authoritative; no automatic increment or retry.")
+    else:
+        print(f"Verified committed Play internal track: versionCode {version}, status completed. Device propagation can take time.")
     return 0
 
 

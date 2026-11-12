@@ -80,7 +80,7 @@ SQLite database and persists across app restarts, including messages received wh
 notifications were disabled. The count is total received entries, not unread or
 confirmed delivery. No sample messages are populated.
 
-Version **0.5.0 / code 6** keeps the Industrial header: a transparent Vinyl
+Version **0.5.1 / code 7** keeps the Industrial header: a transparent Vinyl
 mascot, background-free BLINKY wordmark and icon-only token action. The history
 heading is 45%-opaque navy (down from the prototype's 68%); its text stays opaque,
 and the adjoining feed is 88%-opaque. Neither surface has an opaque parent plate.
