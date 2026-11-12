@@ -173,6 +173,11 @@ artifacts never include private configuration files.
 
 ## Release the next version
 
+Release-variant JVM tests are explicitly enabled through AGP's public host-test
+variant API; the workflow runs `:app:testReleaseUnitTest` and validates its report
+against the full source inventory before retaining or uploading signed artifacts.
+The debug/native PR checks remain separate and do not replace release-variant tests.
+
 Increment **`versionCode`** in `app/build.gradle.kts` for every new Play release,
 including after a code was consumed by an upload even if publication later failed.
 Update the user-visible `versionName` as appropriate. This is the same manual version

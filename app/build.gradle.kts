@@ -51,6 +51,12 @@ android {
     }
 }
 
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        variant.hostTests.getValue(com.android.build.api.variant.HostTestBuilder.UNIT_TEST_TYPE).enable = true
+    }
+}
+
 val validateReleaseConfiguration = tasks.register("validateReleaseConfiguration") {
     doLast {
         check(file("google-services.json").isFile) {
