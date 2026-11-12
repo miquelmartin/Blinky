@@ -49,9 +49,15 @@ debug unit tests, APK build, lint and all instrumentation tests on stable API 37
 runtime; compile/target SDK remains 36 and minimum SDK remains 26. No release
 signing, Firebase client configuration, Play
 credentials or protected environment is used.
-The emulator uses an explicit Pixel 2 profile, four cores, 2 GiB RAM and a
-512 MiB heap instead of the legacy no-profile AVD's 64 MiB heap. Boot timeout or
-failed native tests still fail the required gate.
+The emulator uses an explicit Pixel 2 profile with four guest cores. API37's
+effective minimums are 4 GiB RAM, a 576 MiB heap and 6 GiB userdata, not the
+previously requested 2 GiB/512 MiB/4 GiB. Resource properties are written exactly
+once in the job-owned AVD configuration, using integer MiB for `hw.ramSize` and
+`vm.heapSize`; the old `hw.heapSize` key is not recognized. Generated API target
+and image fields are preserved. After boot, the runner retains `hardware-qemu.ini`
+and rejects CPU/RAM/heap values that differ from the approved configuration.
+These effective settings still require hosted verification. Boot timeout or failed
+native tests still fail the required gate.
 
 ## Runtime and completion evidence
 
@@ -79,8 +85,8 @@ This catches a real false-green baseline:
 spent 7m24s in Android (2m46s build/lint/unit, 4m32s emulator/native), but its APK
 installer reported `Requested internal only, but not enough space` before Gradle
 printed `BUILD SUCCESSFUL`. That is **not** a complete-native-coverage timing
-baseline. The API37 AVD now explicitly has a 4 GiB data partition, preserving its
-Pixel 2/four-core/2 GiB RAM/512 MiB heap settings.
+baseline. A subsequent attempt requested a 4 GiB data partition, but the
+correctly targeted API37 emulator enforces a larger first-boot minimum.
 
 The pinned emulator action also has an
 [upstream framework-readiness race](https://github.com/ReactiveCircus/android-emulator-runner/issues/489):
@@ -88,7 +94,7 @@ its first input command can fail after `sys.boot_completed=1` but before Android
 services are usable. The owned startup script instead requires two consecutive
 complete checks of boot completion, input, package and settings
 services before unlocking and disabling animations. This is bounded startup
-polling, not a test retry. It uses the same SDK tools/image/hardware settings,
+polling, not a test retry. It preserves the API37 image and Pixel 2 profile,
 terminates its emulator process in `finally`, and captures bounded logcat and
 emulator diagnostics on failure. No unmerged third-party action fork is executed.
 
@@ -100,8 +106,8 @@ memory stayed above 849 MiB and host available memory above 4.3 GiB; increasing
 RAM is not an evidence-backed fix. The runner now uses supported `-gpu swiftshader`
 instead of `swiftshader_indirect`, which
 [Android documents as deprecated since emulator 36.4.9](https://developer.android.com/studio/run/emulator-acceleration).
-The API37 image, device, CPU, RAM, heap, data partition and every pixel assertion
-are unchanged. Changing the renderer alone did **not** resolve the failure.
+That renderer correction did not change requested hardware or any pixel
+assertion. Changing the renderer alone did **not** resolve the failure.
 The [hosted runner tools defect](https://github.com/actions/runner-images/issues/14484)
 explains the same crash: old command-line tools silently generate
 `target=android-0` for dotted API37 packages, misconfiguring graphics capabilities.
@@ -110,12 +116,40 @@ revision, and actually uses that version's absolute `sdkmanager`/`avdmanager`
 paths. It rejects any generated AVD target other than exactly `android-37.0`
 before launching the emulator; no target metadata is rewritten and no graphics
 feature is bypassed. Tool revision, AVD metadata and a separate bounded crash
-buffer are retained on failure. The system image/emulator versions and resource
-settings are not changed by this correction.
+buffer are retained on failure. The tooling correction did not change the
+system image/emulator versions or requested resource settings.
 The diagnostic took 4m13s under a seven-runner-minute ceiling,
 ran no builds/APK installs/tests, and is not required-check coverage. Its
 temporary manual workflow exists only on an isolated, unmerged diagnostic ref,
 not in this PR's final verification workflow.
+
+The [tools23 verification](https://github.com/miquelmartin/Blinky/actions/runs/43136962285)
+confirmed revision 23.0 and generated `target=android-37.0`, but never booted:
+the emulator reported only 5830.48 MiB host space available against 7372.80 MiB
+required. All 19 JVM tests passed; native execution never started, so neither
+native coverage nor graphics stability was established. The
+[official first-boot implementation](https://android.googlesource.com/platform/external/qemu/+/9f0811e72acfc46edc39d3d0baedd796f7d03309/android-qemu2-glue/main.cpp#2382)
+enforces at least 6 GiB userdata for API24+ and requires 1.2 times that capacity
+free on the containing filesystem. A smaller requested partition or
+`-partition-size` is not a supported way around that floor.
+The runner now checks for at least 8 GiB free after SDK installation and fails
+immediately if its emulator exits during readiness checks. It does not remove
+host files or guess another storage location.
+
+The [official API37 RAM and heap logic](https://android.googlesource.com/platform/external/qemu/+/6ba955e9dfe60e2ce28e7fe3e9b68479fdbb9812/android/android-emu/android/main-common.c#1254)
+raises RAM to 4096 MiB and the heap minimum to 576 MiB; no low-memory bypass is
+used. The observed binary independently logged the RAM increase. The warning
+about "currently using 2" CPU cores concerns the **host** compatibility check,
+not measured guest CPUs; guest resources must instead be checked in effective
+emulator metadata.
+
+The approved [one-minute read-only storage probe](https://github.com/miquelmartin/Blinky/actions/runs/43189971904)
+was rejected before any runner or step started: GitHub reported failed account
+payments or a spending-limit restriction. It measured no volume capacity or
+permissions. No billing change or retry was made. Alternative job-owned AVD
+placement remains blocked until adequate safe storage is actually observed;
+the temporary manual probe workflow is not part of this PR. No new full
+verification or release is authorized by that probe.
 
 Verification job ceilings are 2 + 3 + 15 + 2 = **22 aggregate runner-minutes per
 attempt**, down from 55. This is not measured savings, parallel wall time or a
