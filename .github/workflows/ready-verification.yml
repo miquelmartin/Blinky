@@ -14,6 +14,10 @@ concurrency:
   group: ready-verification-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+  PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
 jobs:
   plan:
     name: Classify changes
@@ -58,13 +62,14 @@ jobs:
           timeout --kill-after=10s 30s python3 -m unittest discover -s .github/scripts -p 'test_*.py' -v
           timeout --kill-after=10s 30s node --test .github/scripts/test-ready-ci.cjs
 
-  android:
-    name: Android verification
+  android_build:
+    name: Android build and JVM verification
     needs: plan
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 7
     outputs:
       evidence: ${{ steps.evidence.outputs.result }}
+      artifact_id: ${{ steps.apks.outputs.artifact-id }}
     steps:
       - name: Require an explicit change-classification decision
         timeout-minutes: 1
@@ -89,11 +94,98 @@ jobs:
       - name: Build, lint and run Android unit tests without release credentials
         timeout-minutes: 6
         if: needs.plan.outputs.android == 'true'
+        env:
+          TEST_APK_DIR: ${{ runner.temp }}/blinky-apks
         run: |
           test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           test -x "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager"
-          timeout --kill-after=15s 5m sh ./gradlew --daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+          timeout --kill-after=15s 5m sh ./gradlew --daemon --console=plain :app:testDebugUnitTest :app:assembleDebug :app:assembleDebugAndroidTest :app:lintDebug
           timeout --kill-after=10s 15s python3 .github/scripts/verify_test_inventory.py --source app/src/test --reports app/build/test-results/testDebugUnitTest
+          timeout --kill-after=10s 15s python3 .github/scripts/android_test_artifacts.py produce "$TEST_APK_DIR"
+      - name: Stop the job-local Gradle daemon
+        timeout-minutes: 1
+        if: always() && needs.plan.outputs.android == 'true'
+        run: timeout --kill-after=10s 30s sh ./gradlew --stop --console=plain
+      - name: Transfer exact current-attempt test APKs
+        id: apks
+        timeout-minutes: 1
+        if: needs.plan.outputs.android == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: test-apks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/blinky-apks
+          if-no-files-found: error
+          retention-days: 1
+      - name: Retain bounded build failure diagnostics
+        timeout-minutes: 1
+        if: failure() && needs.plan.outputs.android == 'true'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: android-build-failure
+          path: |
+            app/build/test-results/
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.*
+          if-no-files-found: warn
+          retention-days: 3
+      - name: Record built APKs or proven irrelevance
+        timeout-minutes: 1
+        id: evidence
+        env:
+          ANDROID: ${{ needs.plan.outputs.android }}
+          ARTIFACT_ID: ${{ steps.apks.outputs.artifact-id }}
+        run: |
+          case "$ANDROID" in
+            true) test -n "$ARTIFACT_ID"; echo 'result=built' >> "$GITHUB_OUTPUT" ;;
+            false) echo 'result=proven-unnecessary' >> "$GITHUB_OUTPUT" ;;
+            *) exit 1 ;;
+          esac
+
+  android:
+    name: Android verification
+    needs: [plan, android_build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    outputs:
+      evidence: ${{ steps.evidence.outputs.result }}
+    steps:
+      - name: Require an explicit change-classification decision and completed build
+        timeout-minutes: 1
+        env:
+          ANDROID: ${{ needs.plan.outputs.android }}
+          BUILD_EVIDENCE: ${{ needs.android_build.outputs.evidence }}
+          ARTIFACT_ID: ${{ needs.android_build.outputs.artifact_id }}
+        run: |
+          case "$ANDROID/$BUILD_EVIDENCE" in
+            true/built) test -n "$ARTIFACT_ID" ;;
+            false/proven-unnecessary) ;;
+            *) echo "::error::Missing classification or build evidence"; exit 1 ;;
+          esac
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        timeout-minutes: 1
+        if: needs.plan.outputs.android == 'true'
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        timeout-minutes: 1
+        if: needs.plan.outputs.android == 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Download only this producer's immutable artifact
+        timeout-minutes: 1
+        if: needs.plan.outputs.android == 'true'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          artifact-ids: ${{ needs.android_build.outputs.artifact_id }}
+          path: ${{ runner.temp }}/blinky-apks
+          merge-multiple: true
+      - name: Verify exact APK provenance before SDK setup
+        timeout-minutes: 1
+        if: needs.plan.outputs.android == 'true'
+        env:
+          TEST_APK_DIR: ${{ runner.temp }}/blinky-apks
+        run: timeout --kill-after=10s 15s python3 .github/scripts/android_test_artifacts.py verify "$TEST_APK_DIR"
       - name: Enable the Android emulator's KVM access
         timeout-minutes: 1
         if: needs.plan.outputs.android == 'true'
@@ -102,13 +194,11 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run existing instrumentation tests on an emulator
-        timeout-minutes: 9
+        timeout-minutes: 7
         if: needs.plan.outputs.android == 'true'
-        run: timeout --kill-after=15s 8m python3 .github/scripts/run_android_tests.py
-      - name: Stop the job-local Gradle daemon
-        timeout-minutes: 1
-        if: always() && needs.plan.outputs.android == 'true'
-        run: timeout --kill-after=10s 30s sh ./gradlew --stop --console=plain
+        env:
+          TEST_APK_DIR: ${{ runner.temp }}/blinky-apks
+        run: timeout --kill-after=15s 6m python3 .github/scripts/run_android_tests.py
       - name: Retain bounded Android failure diagnostics
         timeout-minutes: 1
         if: failure() && needs.plan.outputs.android == 'true'
@@ -116,11 +206,8 @@ jobs:
         with:
           name: android-verification-failure
           path: |
-            app/build/test-results/
-            app/build/outputs/androidTest-results/
-            app/build/reports/tests/
-            app/build/reports/androidTests/
-            app/build/reports/lint-results-debug.*
+            ${{ runner.temp }}/blinky-native-results/
+            ${{ runner.temp }}/blinky-instrumentation.txt
             ${{ runner.temp }}/blinky-emulator.log
             ${{ runner.temp }}/blinky-logcat.txt
             ${{ runner.temp }}/blinky-crash.txt
@@ -142,7 +229,7 @@ jobs:
   gate:
     name: Ready verification
     if: always()
-    needs: [plan, python, android]
+    needs: [plan, python, android_build, android]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

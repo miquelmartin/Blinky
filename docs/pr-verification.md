@@ -24,7 +24,7 @@ GitHub Actions app (ID **15368**). Keeping this existing name preserves protecti
 during rollout; it no longer means a draft-to-ready lifecycle.
 
 The aggregate always executes and requires successful classification, Python/
-policy tests and Android verification or explicit evidence that Android is
+policy tests, Android build and Android native verification or explicit evidence that Android is
 unnecessary. Missing, failed, skipped or cancelled dependencies fail closed.
 At both the start and the gate, read-only API checks reject a closed/draft PR,
 changed head/source, changed base, changed or unavailable merge candidate,
@@ -61,18 +61,41 @@ native tests still fail the required gate.
 
 ## Runtime and completion evidence
 
-The Android job reuses one job-local Gradle daemon across build/lint/unit and
-instrumentation invocations, then stops it in bounded, always-run cleanup.
-Gradle's existing up-to-date task reuse is retained; no build task or test is
-removed. No cross-PR cache, retries, release configuration or signing input is
-introduced.
+The Android build job runs JVM tests, build, lint and instrumentation APK assembly
+in one Gradle invocation, then stops its job-local daemon in bounded, always-run
+cleanup. A separate fresh native job downloads only those two debug APKs and
+their provenance manifest, not Gradle caches or build intermediates. It does not
+invoke Gradle or compile anything. This isolates build storage from emulator
+storage without deleting shared SDK files. No cross-PR cache, retries, release
+configuration or signing input is introduced.
+
+The APK transfer uses the producer's immutable artifact ID, with a run/attempt
+specific artifact name and one-day retention. Before SDK setup and again before
+execution, the consumer verifies both APK SHA256 values, the exact file set,
+current merge checkout, PR head/base, workflow run/attempt and native source
+inventory. It rejects missing, empty, changed or stale APKs. APK manifest
+inspection also checks the app/test package, target and AndroidJUnitRunner.
+The runtime installs the exact pair and invokes the same AndroidJUnitRunner
+unfiltered once through `adb shell am instrument -w -r`; no test selection,
+orchestrator, retry or assertion change is introduced.
+
+The result adapter requires each expected test to start and finish successfully
+exactly once, matching discovered totals and sequential test numbers. Failures,
+errors, ignored tests, failed assumptions, crashes, malformed/truncated protocol,
+unexpected/duplicate tests and missing terminal success all fail closed. Only
+then does it write JUnit XML for the independent source/report validator.
+Bounded raw runner output, crash buffers and effective device metadata remain
+available on failure. Android build and native evidence are separately required
+by the unchanged aggregate; absent artifacts or an unexpectedly skipped native
+job cannot pass.
 
 All 13 expressions still render at all 21 sampled frames with the same pixel,
 wordmark and state assertions. The test no longer encodes and writes 273 PNGs
 to emulator storage: no repository command or CI artifact consumed those files.
-Assertion failures retain expression/frame/pixel coordinates; Gradle stack traces
-and failure-only XML/HTML/lint reports remain available (three-day retention,
-one-minute upload limit). Successful runs upload no diagnostic artifacts.
+Assertion failures retain expression/frame/pixel coordinates. Build/JVM/lint
+reports and native raw results/XML/crash diagnostics remain failure-only
+(three-day retention, one-minute upload limit). Successful builds transfer only
+the APK pair and provenance needed by the native job, not diagnostic artifacts.
 
 Both Android suites must produce XML reports matching every `@Test` method in
 their respective source trees exactly once. Missing, empty, malformed, partial,
@@ -144,21 +167,28 @@ not measured guest CPUs; guest resources must instead be checked in effective
 emulator metadata.
 
 The approved [one-minute read-only storage probe](https://github.com/miquelmartin/Blinky/actions/runs/43189971904)
-was rejected before any runner or step started: GitHub reported failed account
+was initially rejected before any runner or step started: GitHub reported failed account
 payments or a spending-limit restriction. It measured no volume capacity or
-permissions. No billing change or retry was made. Alternative job-owned AVD
-placement remains blocked until adequate safe storage is actually observed;
-the temporary manual probe workflow is not part of this PR. No new full
-verification or release is authorized by that probe.
+permissions. Its separately approved
+[second attempt](https://github.com/miquelmartin/Blinky/actions/runs/43189971904/attempts/2)
+executed for approximately three seconds: `RUNNER_TEMP` and `/mnt` shared the
+same root filesystem with 14,142,455,808 bytes available before setup. `/mnt`
+was not writable by the runner, so relocation there supplies neither capacity
+nor safe unprivileged placement. This does not establish post-setup capacity;
+the fresh native job still checks for at least 8 GiB after SDK setup and APK
+transfer. No billing change, host cleanup or shared SDK deletion was made.
+The temporary manual probe workflow is not part of this PR.
 
-Verification job ceilings are 2 + 3 + 15 + 2 = **22 aggregate runner-minutes per
+Verification job ceilings are 2 + 3 + 7 (build) + 8 (native) + 2 = **22 aggregate runner-minutes per
 attempt**, down from 55. This is not measured savings, parallel wall time or a
-billing cap; reruns and multiple PRs multiply usage. The Android limit includes
-headroom over the observed 7m24s job, but complete coverage must fit or the run
-fails. Build/lint/unit has a five-minute process deadline (six-minute step);
-native execution has three minutes after emulator setup, framework readiness
-has three minutes, SDK installation has three minutes, and the complete native
-process has eight minutes (nine-minute step). Process deadlines use a finite kill
+billing cap; reruns and multiple PRs multiply usage. Separating jobs adds fresh
+checkout/Java setup and APK upload/download overhead, each transfer capped at
+one minute within the job ceilings; it is not a measured runtime improvement.
+Complete coverage must fit or the run fails. Build/lint/unit/test-APK assembly
+has a five-minute process deadline (six-minute step); native execution has three
+minutes after emulator setup, each APK install 30 seconds, framework readiness
+three minutes, SDK installation three minutes, and the complete native process
+six minutes (seven-minute step). Process deadlines use a finite kill
 grace, daemon cleanup has 30 seconds, and all remaining steps also have finite
 limits. A timeout is failure, never proof that remaining tests were unnecessary.
 The source/report validator and retained failure reports are the completion

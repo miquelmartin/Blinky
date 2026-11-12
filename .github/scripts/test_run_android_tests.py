@@ -5,10 +5,23 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from run_android_tests import configure_avd, main, require_storage, run, wait_for_framework
+from run_android_tests import configure_avd, instrumentation_component, main, require_storage, run, wait_for_framework
 
 
 class AndroidReadinessTests(unittest.TestCase):
+    def setUp(self):
+        self.apks = {"app-debug.apk": Path("app.apk"), "app-debug-androidTest.apk": Path("test.apk")}
+        for name, value in (("verify_artifacts", self.apks), ("instrumentation_component", "test/runner")):
+            patcher = patch(f"run_android_tests.{name}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = patch("run_android_tests.write_report")
+        self.report = patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = patch.dict(os.environ, {"TEST_APK_DIR": "artifact"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def response(self, output, code=0):
         return Mock(stdout=output, stderr="", returncode=code)
 
@@ -23,6 +36,11 @@ class AndroidReadinessTests(unittest.TestCase):
             tools = root / "cmdline-tools" / "23.0"
             tools.mkdir(parents=True)
             (tools / "source.properties").write_text("Pkg.Revision=23.0\n", encoding="utf-8")
+        if "emulator" in args:
+            for package in (root / "emulator", root / "system-images" / "android-37.0" / "google_apis" / "x86_64"):
+                package.mkdir(parents=True)
+                revision = "37.2.13" if package.name == "emulator" else "7"
+                (package / "source.properties").write_text(f"Pkg.Revision={revision}\n", encoding="utf-8")
         if Path(args[0]).name == "avdmanager":
             home = root / "blinky-avd"
             (home / "blinky-ci.avd").mkdir()
@@ -160,8 +178,10 @@ class AndroidReadinessTests(unittest.TestCase):
             self.assertEqual(root / "cmdline-tools" / "latest" / "bin" / "sdkmanager", commands[0][0])
             self.assertEqual(root / "cmdline-tools" / "23.0" / "bin" / "sdkmanager", commands[1][0])
             self.assertEqual(root / "cmdline-tools" / "23.0" / "bin" / "avdmanager", commands[2][0])
-            self.assertEqual(1, sum(":app:connectedDebugAndroidTest" in cmd for cmd in commands))
-            self.assertIn("verify_test_inventory.py", str(commands[-1]))
+            self.assertFalse(any("gradlew" in str(cmd) for cmd in commands))
+            self.assertEqual(2, sum("install" in cmd for cmd in commands))
+            self.assertEqual(["shell", "am", "instrument", "-w", "-r", "test/runner"], commands[-1][3:])
+            self.report.assert_called_once()
             start.return_value.terminate.assert_called_once()
 
     @patch("run_android_tests.subprocess.Popen")
@@ -203,9 +223,25 @@ class AndroidReadinessTests(unittest.TestCase):
             with patch.dict(os.environ, {"ANDROID_HOME": directory, "RUNNER_TEMP": directory}):
                 with self.assertRaisesRegex(ValueError, "hw.cpu.ncore=4"):
                     main()
-            self.assertFalse(any(":app:connectedDebugAndroidTest" in call.args[0]
+            self.assertFalse(any("instrument" in call.args[0]
                                  for call in execute.call_args_list))
             start.return_value.terminate.assert_called_once()
+
+    @patch("run_android_tests.run")
+    def test_apk_manifest_target_and_runner_must_match(self, execute):
+        android = 'xmlns:android="http://schemas.android.com/apk/res/android"'
+        good = f'<manifest package="org.miquelmartin.blinky.test" {android}><instrumentation android:name="androidx.test.runner.AndroidJUnitRunner" android:targetPackage="org.miquelmartin.blinky"/></manifest>'
+        for test in (good, good.replace('targetPackage="org.miquelmartin.blinky"', 'targetPackage="wrong"'),
+                     good.replace("AndroidJUnitRunner", "OtherRunner")):
+            execute.side_effect = [
+                self.response('<manifest package="org.miquelmartin.blinky"/>'), self.response(test),
+            ]
+            if test == good:
+                self.assertEqual("org.miquelmartin.blinky.test/androidx.test.runner.AndroidJUnitRunner",
+                                 instrumentation_component(Path("tools"), self.apks))
+            else:
+                with self.assertRaisesRegex(ValueError, "mismatch"):
+                    instrumentation_component(Path("tools"), self.apks)
 
 
 if __name__ == "__main__":

@@ -4,6 +4,10 @@ import shutil
 import signal
 import subprocess
 import time
+import xml.etree.ElementTree as ET
+
+from android_test_artifacts import verify as verify_artifacts
+from android_test_results import write_report
 
 
 def run(command, seconds, *, check=True, capture=False):
@@ -90,7 +94,26 @@ def require_storage(path):
         raise RuntimeError(f"AVD storage requires at least 8 GiB free; available={free} bytes at {path}")
 
 
+def instrumentation_component(tools, apks):
+    manifests = {}
+    for name, apk in apks.items():
+        result = run([tools / "apkanalyzer", "manifest", "print", apk], 20, capture=True)
+        manifests[name] = ET.fromstring(result.stdout)
+    app = manifests["app-debug.apk"]
+    test = manifests["app-debug-androidTest.apk"]
+    android = "{http://schemas.android.com/apk/res/android}"
+    runners = test.findall("instrumentation")
+    if (app.get("package") != "org.miquelmartin.blinky"
+            or test.get("package") != "org.miquelmartin.blinky.test"
+            or len(runners) != 1
+            or runners[0].get(android + "targetPackage") != app.get("package")
+            or runners[0].get(android + "name") != "androidx.test.runner.AndroidJUnitRunner"):
+        raise ValueError("APK package, target or instrumentation runner mismatch")
+    return f"{test.get('package')}/{runners[0].get(android + 'name')}"
+
+
 def main():
+    apks = verify_artifacts(Path(os.environ["TEST_APK_DIR"]))
     sdk = Path(os.environ["ANDROID_HOME"])
     bootstrap = sdk / "cmdline-tools" / "latest" / "bin"
     tools = sdk / "cmdline-tools" / "23.0" / "bin"
@@ -112,6 +135,13 @@ def main():
         print("Installing the API37 Google APIs image and emulator.", flush=True)
         run([tools / "sdkmanager", "--install", "emulator", "platform-tools",
              "system-images;android-37.0;google_apis;x86_64"], 180, capture=True)
+        require_property(sdk / "emulator" / "source.properties", "Pkg.Revision", "37.2.13")
+        require_property(sdk / "system-images" / "android-37.0" / "google_apis" / "x86_64" / "source.properties",
+                         "Pkg.Revision", "7")
+        with metadata_path.open("a", encoding="utf-8") as metadata:
+            for package in (sdk / "emulator", sdk / "system-images" / "android-37.0" / "google_apis" / "x86_64"):
+                metadata.write(f"\n{package.name} package:\n" + (package / "source.properties").read_text(encoding="utf-8"))
+        component = instrumentation_component(tools, apks)
         require_storage(avd_home)
         run([tools / "avdmanager", "create", "avd", "--force", "--name", "blinky-ci",
              "--package", "system-images;android-37.0;google_apis;x86_64",
@@ -139,10 +169,15 @@ def main():
         for setting in ("window_animation_scale", "transition_animation_scale", "animator_duration_scale"):
             run([*adb, "shell", "settings", "put", "global", setting, "0.0"], 10)
         run([*adb, "shell", "df", "-h", "/data"], 10)
-        run(["sh", "./gradlew", "--daemon", "--console=plain", ":app:connectedDebugAndroidTest"], 180)
-        run(["python3", ".github/scripts/verify_test_inventory.py",
-             "--source", "app/src/androidTest",
-             "--reports", "app/build/outputs/androidTest-results/connected"], 15)
+        for apk in apks.values():
+            run([*adb, "install", "-r", "-t", apk], 30, capture=True)
+        result = run([*adb, "shell", "am", "instrument", "-w", "-r", component], 180, capture=True, check=False)
+        raw_path = temporary / "blinky-instrumentation.txt"
+        raw_path.write_text(result.stdout + result.stderr, encoding="utf-8")
+        print(result.stdout[-12000:], flush=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Android instrumentation command failed: exit={result.returncode}")
+        write_report(result.stdout, Path("app/src/androidTest"), temporary / "blinky-native-results")
         completed = True
     finally:
         try:
