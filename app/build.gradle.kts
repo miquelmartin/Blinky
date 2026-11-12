@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 if (file("google-services.json").isFile) {
@@ -52,7 +51,7 @@ android {
     }
 }
 
-val validateReleaseConfiguration by tasks.registering {
+val validateReleaseConfiguration = tasks.register("validateReleaseConfiguration") {
     doLast {
         check(file("google-services.json").isFile) {
             "Release packaging requires app/google-services.json from the registered org.miquelmartin.blinky Firebase app."
@@ -79,9 +78,30 @@ kotlin {
 }
 
 dependencies {
-    implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
     implementation("com.google.firebase:firebase-messaging")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
+
+    constraints {
+        add("androidLintTool", "com.google.guava:guava:33.8.0-jre") {
+            because("Lint resolves its own isolated copy of AGP's vulnerable tooling libraries")
+        }
+        add("androidLintTool", "org.bouncycastle:bcprov-jdk18on:1.87") {
+            because("Keep lint's isolated crypto libraries aligned with the patched build classpath")
+        }
+        add("androidLintTool", "org.bouncycastle:bcpkix-jdk18on:1.87") {
+            because("Keep lint's isolated crypto libraries aligned with the patched build classpath")
+        }
+        add("androidLintTool", "org.bouncycastle:bcutil-jdk18on:1.87") {
+            because("Keep lint's isolated crypto libraries aligned with the patched build classpath")
+        }
+        add("androidLintTool", "org.apache.commons:commons-lang3:3.22.0") {
+            because("Lint's commons-compress dependency requests a version affected by GHSA-j288-q9x7-2f5v")
+        }
+        add("androidLintTool", "org.apache.httpcomponents:httpclient:4.5.14") {
+            because("Lint's httpmime dependency requests a version affected by GHSA-7r82-7xv7-xcpj")
+        }
+    }
 }

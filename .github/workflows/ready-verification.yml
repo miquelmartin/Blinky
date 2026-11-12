@@ -22,12 +22,12 @@ jobs:
     outputs:
       android: ${{ steps.changes.outputs.android }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
       - name: Require a current ready pull request
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { assertCurrentPR } = require('./.github/scripts/ready-ci.cjs');
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Sender and release-configuration tests
@@ -69,11 +69,11 @@ jobs:
             true|false) ;;
             *) echo "::error::Missing or invalid Android decision"; exit 1 ;;
           esac
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.plan.outputs.android == 'true'
         with:
           persist-credentials: false
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+      - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         if: needs.plan.outputs.android == 'true'
         with:
           distribution: temurin
@@ -91,8 +91,13 @@ jobs:
         if: needs.plan.outputs.android == 'true'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          api-level: 35
+          api-level: '37.0'
+          target: google_apis
           arch: x86_64
+          profile: pixel_2
+          cores: 4
+          ram-size: 2048M
+          heap-size: 512M
           disable-animations: true
           script: sh ./gradlew --no-daemon --console=plain :app:connectedDebugAndroidTest
       - name: Record completed verification or proven irrelevance
@@ -113,11 +118,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Reject missing, unsuccessful or stale verification
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           VERIFICATION_NEEDS: ${{ toJSON(needs) }}
         with:

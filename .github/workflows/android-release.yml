@@ -36,12 +36,12 @@ jobs:
           esac
 
       - name: Check out the release source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Set up Java
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
@@ -78,7 +78,7 @@ jobs:
 
       - name: Verify signatures and prepare checksums
         run: |
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify app/build/outputs/apk/release/app-release.apk
           jarsigner -verify app/build/outputs/bundle/release/app-release.aab > "$RUNNER_TEMP/blinky-bundle-verification.txt"
           if ! grep -q 'jar verified' "$RUNNER_TEMP/blinky-bundle-verification.txt"; then
             echo "::error::The release AAB signature could not be verified."
@@ -88,7 +88,7 @@ jobs:
           sha256sum apk/release/app-release.apk bundle/release/app-release.aab > blinky-checksums.txt
 
       - name: Retain signed release artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: blinky-${{ inputs.operation }}-${{ github.run_number }}
           path: |
