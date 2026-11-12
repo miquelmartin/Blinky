@@ -157,7 +157,27 @@ free on the containing filesystem. A smaller requested partition or
 `-partition-size` is not a supported way around that floor.
 The runner now checks for at least 8 GiB free after SDK installation and fails
 immediately if its emulator exits during readiness checks. It does not remove
-host files or guess another storage location.
+host SDK packages other than the verified unused .NET installation described
+below, and does not guess another storage location.
+
+The [single setup-only preflight](https://github.com/miquelmartin/Blinky/actions/runs/43200191825)
+verified that removing only `/usr/share/dotnet` on a disposable Ubuntu 24.04
+native runner reclaimed 6,167,756,800 bytes. The exact path was a root-owned
+directory on the same filesystem as `RUNNER_TEMP` and `ANDROID_HOME`, with no
+symlink or nested mount. The unchanged side-by-side tools23, emulator37.2.13,
+platform-tools37.0.1 and API37 image revision7 setup then left
+13,238,075,392 bytes free (12.33 GiB), above the 8 GiB runtime guard plus a
+16 MiB reserve. No APK, AVD, emulator or test ran in this preflight.
+
+Each fresh hosted native job now repeats only that guarded deletion before SDK
+setup. It refuses unexpected runner identity, target path/type/owner/mount or
+filesystem placement, and requires at least the measured SDK setup footprint
+plus 1 GiB headroom beyond the final storage guard before continuing. The
+existing post-setup 8 GiB check remains authoritative. This affects only the
+disposable runner's unused .NET SDK files; it changes no application
+dependencies, shared SDK, runner image or local machine, and cannot persist
+between jobs. CPU memory, image/API/emulator versions, test assertions and all
+inventory/provenance checks are unchanged.
 
 The [official API37 RAM and heap logic](https://android.googlesource.com/platform/external/qemu/+/6ba955e9dfe60e2ce28e7fe3e9b68479fdbb9812/android/android-emu/android/main-common.c#1254)
 raises RAM to 4096 MiB and the heap minimum to 576 MiB; no low-memory bypass is

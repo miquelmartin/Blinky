@@ -186,6 +186,10 @@ jobs:
         env:
           TEST_APK_DIR: ${{ runner.temp }}/blinky-apks
         run: timeout --kill-after=10s 15s python3 .github/scripts/android_test_artifacts.py verify "$TEST_APK_DIR"
+      - name: Reclaim measured unused .NET space for the API37 emulator
+        timeout-minutes: 1
+        if: needs.plan.outputs.android == 'true'
+        run: timeout --kill-after=3s 45s python3 .github/scripts/remove_unused_dotnet.py
       - name: Enable the Android emulator's KVM access
         timeout-minutes: 1
         if: needs.plan.outputs.android == 'true'
